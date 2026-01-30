@@ -39,7 +39,12 @@ def _process_feeds(config: dict, latest_only: bool = False) -> int:
                 click.echo(f"    Error fetching article: {e}", err=True)
                 continue
 
-            article = extract_article(raw_html, author=feed_article.author, published=feed_article.published)
+            article = extract_article(
+                raw_html,
+                author=feed_article.author,
+                published=feed_article.published,
+                session_cookie=config["substack_session_cookie"],
+            )
 
             click.echo("    Sending to Kindle...")
             try:

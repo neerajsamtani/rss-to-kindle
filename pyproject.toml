@@ -5,9 +5,11 @@ description = "Monitor Substack RSS feeds, fetch full paywalled content, and ema
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.3.1",
+    "ebooklib>=0.18",
     "feedparser>=6.0.12",
     "httpx>=0.28.1",
     "lxml>=6.0.2",
+    "Pillow>=11.0.0",
     "python-dotenv>=1.2.1",
     "readability-lxml>=0.8.4.1",
 ]
