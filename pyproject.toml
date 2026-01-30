@@ -1,0 +1,16 @@
+[project]
+name = "rss-to-kindle"
+version = "0.1.0"
+description = "Monitor Substack RSS feeds, fetch full paywalled content, and email to Kindle"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.3.1",
+    "feedparser>=6.0.12",
+    "httpx>=0.28.1",
+    "lxml>=6.0.2",
+    "python-dotenv>=1.2.1",
+    "readability-lxml>=0.8.4.1",
+]
+
+[project.scripts]
+rss-to-kindle = "rss_to_kindle.cli:main"
