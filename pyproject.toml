@@ -14,5 +14,9 @@ dependencies = [
     "readability-lxml>=0.8.4.1",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project.scripts]
 rss-to-kindle = "rss_to_kindle.cli:main"
