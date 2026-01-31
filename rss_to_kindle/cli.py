@@ -4,13 +4,13 @@ import click
 
 from .config import load_config
 from .extractor import extract_article
-from .feed import fetch_feed
+from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
 from .kindle import send_to_kindle
 from .state import is_sent, mark_sent
 
 
-def _process_feeds(config: dict, latest_only: bool = False) -> int:
+def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> int:
     """Check all feeds, fetch new articles, and send to Kindle. Returns count of articles sent."""
     sent_count = 0
 
@@ -21,6 +21,8 @@ def _process_feeds(config: dict, latest_only: bool = False) -> int:
         except Exception as e:
             click.echo(f"  Error parsing feed: {e}", err=True)
             continue
+
+        articles = filter_recent(articles, days)
 
         if latest_only:
             articles = articles[:1]
@@ -75,10 +77,11 @@ def main():
 
 @main.command()
 @click.option("--latest", is_flag=True, help="Only fetch the latest article from each feed.")
-def fetch(latest):
+@click.option("--days", default=3, type=int, help="Only process articles published within this many days.")
+def fetch(latest, days):
     """One-shot: check feeds, fetch & send any new articles."""
     config = load_config()
-    sent = _process_feeds(config, latest_only=latest)
+    sent = _process_feeds(config, latest_only=latest, days=days)
     click.echo(f"Done. Sent {sent} article(s).")
 
 

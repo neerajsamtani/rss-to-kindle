@@ -1,6 +1,9 @@
+from calendar import timegm
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import feedparser
+from feedparser.datetimes import _parse_date
 
 
 @dataclass
@@ -36,3 +39,17 @@ def fetch_feed(feed_url: str) -> list[FeedArticle]:
         )
 
     return articles
+
+
+def filter_recent(articles: list[FeedArticle], days: int) -> list[FeedArticle]:
+    """Return only articles published within the last `days` days.
+
+    Articles with unparsable dates are included as a safe default.
+    """
+    cutoff = datetime.now(timezone.utc).timestamp() - (days * 86400)
+    result = []
+    for article in articles:
+        parsed = _parse_date(article.published) if article.published else None
+        if parsed is None or timegm(parsed) >= cutoff:
+            result.append(article)
+    return result
