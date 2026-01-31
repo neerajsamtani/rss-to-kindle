@@ -14,6 +14,28 @@ class Article:
     published: str
     html_content: str
     images: dict[str, bytes] = field(default_factory=dict)
+    cover_image_url: str | None = None
+
+
+def _extract_meta(raw_html: str) -> dict[str, str | None]:
+    """Extract og:image, og:title, and author from meta tags before readability strips them."""
+    doc = lxml.html.fromstring(raw_html)
+    result: dict[str, str | None] = {"og_image": None, "og_title": None, "author": None}
+
+    for prop, key in [("og:image", "og_image"), ("og:title", "og_title")]:
+        meta = doc.find(f'.//meta[@property="{prop}"]')
+        if meta is not None:
+            value = meta.get("content", "").strip()
+            if value:
+                result[key] = value
+
+    author_meta = doc.find('.//meta[@name="author"]')
+    if author_meta is not None:
+        value = author_meta.get("content", "").strip()
+        if value:
+            result["author"] = value
+
+    return result
 
 
 def _simplify_headers(raw_html: str) -> str:
@@ -68,6 +90,30 @@ def _simplify_images(raw_html: str) -> str:
     return lxml.html.tostring(doc, encoding="unicode")
 
 
+def _compress_image(data: bytes, max_width: int = 1200, quality: int = 80) -> bytes:
+    """Resize and compress an image for Kindle. Returns original bytes on failure."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        img = Image.open(BytesIO(data))
+    except Exception:
+        return data
+
+    if getattr(img, "is_animated", False):
+        return data
+
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+
+    img = img.convert("RGB")
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[str, bytes]]:
     """Download images from HTML, rewrite src attributes, return modified HTML and image data."""
     doc = lxml.html.fromstring(html_content)
@@ -87,17 +133,20 @@ def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[
         except Exception:
             continue
 
-        ext = "jpg"
-        content_type = resp.headers.get("content-type", "")
-        if "png" in content_type:
-            ext = "png"
-        elif "gif" in content_type:
-            ext = "gif"
-        elif "webp" in content_type:
-            ext = "webp"
-
-        filename = f"{hashlib.md5(src.encode()).hexdigest()}.{ext}"
-        images[filename] = resp.content
+        compressed = _compress_image(resp.content)
+        if compressed is not resp.content:
+            filename = f"{hashlib.md5(src.encode()).hexdigest()}.jpg"
+        else:
+            ext = "jpg"
+            content_type = resp.headers.get("content-type", "")
+            if "png" in content_type:
+                ext = "png"
+            elif "gif" in content_type:
+                ext = "gif"
+            elif "webp" in content_type:
+                ext = "webp"
+            filename = f"{hashlib.md5(src.encode()).hexdigest()}.{ext}"
+        images[filename] = compressed
         img.set("src", f"images/{filename}")
 
     modified_html = lxml.html.tostring(doc, encoding="unicode")
@@ -108,11 +157,14 @@ def extract_article(
     raw_html: str, author: str = "Unknown", published: str = "", session_cookie: str = ""
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
+    meta = _extract_meta(raw_html)
     raw_html = _simplify_headers(raw_html)
     raw_html = _simplify_images(raw_html)
 
     doc = Document(raw_html)
-    title = doc.title()
+    title = meta["og_title"] or doc.title()
+    if author == "Unknown" and meta["author"]:
+        author = meta["author"]
     content = doc.summary()
 
     images: dict[str, bytes] = {}
@@ -125,4 +177,5 @@ def extract_article(
         published=published,
         html_content=content,
         images=images,
+        cover_image_url=meta["og_image"],
     )

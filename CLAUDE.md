@@ -48,8 +48,9 @@ uv run pytest tests/test_feed.py::test_fetch_feed -v
 ### Linting & Formatting
 
 Ruff is configured in pyproject.toml with:
-- Line length: 100 characters
+- Line length: 100 characters (E501 ignored — the formatter handles wrapping)
 - Target: Python 3.12
+- Double quotes enforced
 - Rules: E, F, I (imports), W, UP (pyupgrade), B (bugbear)
 
 ```bash
@@ -131,3 +132,4 @@ All config is via environment variables (`.env` file). See `.env.example` for th
 - **Prudent comments**: Only add comments for things that are not obvious when reading the code, or when summarizing large chunks of code when a comment would greatly improve readability. Comments should generally talk about _why_ the code is doing what it's doing and not just _what_ the code is doing
 - **Favor maintainability**: Simple, clear solutions over clever ones
 - **Keep it accessible**: New developers should be able to quickly understand and make changes
+- **Minimize Substack-specific code**: Keep Substack-specific logic (session cookies, `captioned-image-container` workarounds) isolated to where it's strictly needed. Generic operations like downloading public images or parsing standard meta tags should not depend on Substack auth. This makes it easier to extend the tool to other RSS feeds.
