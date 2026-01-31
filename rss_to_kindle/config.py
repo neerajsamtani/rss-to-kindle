@@ -44,9 +44,7 @@ def _validate(config: dict) -> None:
     ]
     missing = [env_name for key, env_name in required if not config.get(key)]
     if missing:
-        raise ValueError(
-            f"Missing required environment variables: {', '.join(missing)}"
-        )
+        raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
 
 
 def save_cookie_to_env(cookie_value: str) -> None:

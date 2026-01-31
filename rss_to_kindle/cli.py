@@ -93,7 +93,7 @@ def login(from_browser):
     try:
         jar = loader(domain_name=".substack.com")
     except Exception as e:
-        raise click.ClickException(f"Could not read cookies from {from_browser}: {e}")
+        raise click.ClickException(f"Could not read cookies from {from_browser}: {e}") from e
 
     cookie_value = None
     for cookie in jar:
@@ -114,7 +114,9 @@ def login(from_browser):
 
 @main.command()
 @click.option("--latest", is_flag=True, help="Only fetch the latest article from each feed.")
-@click.option("--days", default=3, type=int, help="Only process articles published within this many days.")
+@click.option(
+    "--days", default=3, type=int, help="Only process articles published within this many days."
+)
 def fetch(latest, days):
     """One-shot: check feeds, fetch & send any new articles."""
     config = load_config()
