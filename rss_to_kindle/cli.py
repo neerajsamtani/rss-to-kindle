@@ -97,7 +97,7 @@ def login(from_browser):
 
     cookie_value = None
     for cookie in jar:
-        if cookie.name == "connect.sid" and "substack.com" in cookie.domain:
+        if cookie.name == "substack.sid" and "substack.com" in cookie.domain:
             cookie_value = cookie.value
             break
 
