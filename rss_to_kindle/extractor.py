@@ -19,24 +19,19 @@ class Article:
 def _simplify_headers(raw_html: str) -> str:
     """Strip Substack's anchor widgets from headings so readability preserves them.
 
-    Substack injects an <a> with nested <div>/<svg> inside each heading for the
-    anchor-link icon. The extra nesting can cause readability to treat headings
-    as boilerplate and drop them.
+    Substack injects a div.header-anchor-parent with nested button/svg inside each
+    heading for the anchor-link icon. The class "header-anchor-post" on the heading
+    itself triggers readability's unlikely-candidate filter (matches "header").
+    We remove the widget div and strip heading classes to prevent both issues.
     """
     doc = lxml.html.fromstring(raw_html)
 
     for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
         for heading in doc.iter(tag):
-            for anchor in heading.findall(".//a"):
-                if anchor.find(".//svg") is not None:
-                    # Preserve any tail text after the anchor element
-                    if anchor.tail:
-                        prev = anchor.getprevious()
-                        if prev is not None:
-                            prev.tail = (prev.tail or "") + anchor.tail
-                        else:
-                            heading.text = (heading.text or "") + anchor.tail
-                    heading.remove(anchor)
+            for widget in heading.find_class("header-anchor-parent"):
+                heading.remove(widget)
+            if "class" in heading.attrib:
+                del heading.attrib["class"]
 
     return lxml.html.tostring(doc, encoding="unicode")
 
