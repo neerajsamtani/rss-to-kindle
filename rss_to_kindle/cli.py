@@ -7,7 +7,7 @@ from .extractor import extract_article
 from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
 from .kindle import send_to_kindle
-from .state import is_sent, mark_sent
+from .state import get_history, is_sent, mark_sent
 
 
 def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> int:
@@ -62,7 +62,12 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                 click.echo(f"    Error sending email: {e}", err=True)
                 continue
 
-            mark_sent(feed_article.url)
+            mark_sent(
+                feed_article.url,
+                title=feed_article.title,
+                author=feed_article.author,
+                feed_url=feed_url,
+            )
             sent_count += 1
             click.echo(f"    Sent: {feed_article.title}")
 
@@ -139,3 +144,33 @@ def poll():
         except KeyboardInterrupt:
             click.echo("\nStopped.")
             break
+
+
+@main.command()
+@click.option("--limit", default=20, type=int, help="Maximum number of articles to show.")
+def history(limit):
+    """Show recently sent articles."""
+    records = get_history()
+    if not records:
+        click.echo("No articles sent yet.")
+        return
+
+    total = len(records)
+    shown = records[:limit]
+
+    for record in shown:
+        title = record.title or record.url
+        click.echo(f"  {title}")
+
+        parts = []
+        if record.author:
+            parts.append(f"by {record.author}")
+        if record.sent_at:
+            parts.append(f"sent {record.sent_at[:10]}")
+        if record.feed_url:
+            parts.append(record.feed_url)
+        if parts:
+            click.echo(f"    {' | '.join(parts)}")
+
+    if total > limit:
+        click.echo(f"\nShowing {limit} of {total}")
