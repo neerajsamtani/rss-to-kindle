@@ -1,6 +1,10 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
+
+ENV_PATH = Path(".env")
+ENV_EXAMPLE_PATH = Path(".env.example")
 
 
 def load_config() -> dict:
@@ -43,3 +47,27 @@ def _validate(config: dict) -> None:
         raise ValueError(
             f"Missing required environment variables: {', '.join(missing)}"
         )
+
+
+def save_cookie_to_env(cookie_value: str) -> None:
+    """Write or update SUBSTACK_SESSION_COOKIE in the .env file."""
+    key = "SUBSTACK_SESSION_COOKIE"
+    new_line = f"{key}={cookie_value}"
+
+    if ENV_PATH.exists():
+        lines = ENV_PATH.read_text().splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith(f"{key}="):
+                lines[i] = new_line
+                break
+        else:
+            lines.append(new_line)
+        ENV_PATH.write_text("\n".join(lines) + "\n")
+    else:
+        # Seed from .env.example if available, otherwise create minimal file
+        if ENV_EXAMPLE_PATH.exists():
+            text = ENV_EXAMPLE_PATH.read_text()
+            text = text.replace(f"{key}=s%3A...", new_line)
+            ENV_PATH.write_text(text)
+        else:
+            ENV_PATH.write_text(new_line + "\n")
