@@ -73,6 +73,52 @@ def add_feed_to_env(feed_url: str) -> None:
         ENV_PATH.write_text(f"{key}={feed_url}\n")
 
 
+def save_kindle_email_to_env(email: str) -> None:
+    """Write or update KINDLE_EMAIL in the .env file."""
+    key = "KINDLE_EMAIL"
+    new_line = f"{key}={email}"
+
+    if ENV_PATH.exists():
+        lines = ENV_PATH.read_text().splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith(f"{key}="):
+                lines[i] = new_line
+                break
+        else:
+            lines.append(new_line)
+        ENV_PATH.write_text("\n".join(lines) + "\n")
+    else:
+        if ENV_EXAMPLE_PATH.exists():
+            text = ENV_EXAMPLE_PATH.read_text()
+            text = text.replace(f"{key}=name@kindle.com", new_line)
+            ENV_PATH.write_text(text)
+        else:
+            ENV_PATH.write_text(new_line + "\n")
+
+
+def remove_feed_from_env(feed_url: str) -> None:
+    """Remove a feed URL from SUBSTACK_FEEDS in the .env file."""
+    key = "SUBSTACK_FEEDS"
+
+    if not ENV_PATH.exists():
+        raise ValueError(f"Feed not found: {feed_url}")
+
+    lines = ENV_PATH.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            existing = line[len(f"{key}=") :]
+            feeds = [u.strip() for u in existing.split(",") if u.strip()]
+            if feed_url not in feeds:
+                raise ValueError(f"Feed not found: {feed_url}")
+            feeds.remove(feed_url)
+            lines[i] = f"{key}={','.join(feeds)}"
+            break
+    else:
+        raise ValueError(f"Feed not found: {feed_url}")
+
+    ENV_PATH.write_text("\n".join(lines) + "\n")
+
+
 def save_cookie_to_env(cookie_value: str) -> None:
     """Write or update SUBSTACK_SESSION_COOKIE in the .env file."""
     key = "SUBSTACK_SESSION_COOKIE"

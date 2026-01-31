@@ -17,14 +17,13 @@ uv run rss-to-kindle fetch              # One-shot: check feeds, fetch new artic
 uv run rss-to-kindle fetch --latest     # Only fetch the latest article from each feed
 uv run rss-to-kindle fetch --days 7     # Only process articles from the last 7 days (default: 3)
 uv run rss-to-kindle poll               # Continuous: run fetch every POLL_INTERVAL_MINUTES
+uv run rss-to-kindle init                # Interactive first-run setup (Kindle email + optional Substack login)
 uv run rss-to-kindle login --from-browser chrome
 uv run rss-to-kindle list               # Show configured feed URLs
 uv run rss-to-kindle add <url>          # Add a feed URL to .env
-uv run rss-to-kindle history            # Show recently sent articles
-uv run rss-to-kindle preview <url>      # Generate EPUB locally without sending
-
-# Install in editable mode after pyproject.toml changes
-uv pip install -e .                     # Required after changing pyproject.toml
+uv run rss-to-kindle remove <url>       # Remove a feed URL from .env
+uv run rss-to-kindle history            # Show recently sent articles (--limit N)
+uv run rss-to-kindle preview <url>      # Generate EPUB locally without sending (-o path)
 ```
 
 ### Testing
@@ -84,6 +83,11 @@ git push --no-verify
 # Update hook versions
 uv run pre-commit autoupdate
 ```
+
+## CI/CD
+
+- **Lint** (`.github/workflows/lint.yml`): Runs `ruff check` and `ruff format --check` on PRs and pushes to main.
+- **Fetch** (`.github/workflows/fetch.yml`): Scheduled every 6 hours (+ manual dispatch) to run `fetch` and send new articles. Uses `actions/cache` to persist `~/.rss-to-kindle/sent.json` between runs. All config is via repository secrets.
 
 ## Architecture
 
