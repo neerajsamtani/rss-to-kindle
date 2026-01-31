@@ -2,7 +2,7 @@ import time
 
 import click
 
-from .config import load_config, save_cookie_to_env
+from .config import add_feed_to_env, load_config, load_feeds, save_cookie_to_env
 from .extractor import extract_article
 from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
@@ -174,3 +174,28 @@ def history(limit):
 
     if total > limit:
         click.echo(f"\nShowing {limit} of {total}")
+
+
+@main.command("list")
+def list_feeds():
+    """Show configured Substack feed URLs."""
+    feeds = load_feeds()
+    if not feeds:
+        click.echo("No feeds configured. Add one with: rss-to-kindle add <url>")
+        return
+
+    for i, url in enumerate(feeds, 1):
+        click.echo(f"  {i}. {url}")
+
+
+@main.command()
+@click.argument("url")
+def add(url):
+    """Add a Substack feed URL to your configuration."""
+    feeds = load_feeds()
+    if url in feeds:
+        click.echo(f"Feed already configured: {url}")
+        return
+
+    add_feed_to_env(url)
+    click.echo(f"Added: {url}")

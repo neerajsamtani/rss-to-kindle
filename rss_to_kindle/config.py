@@ -47,6 +47,30 @@ def _validate(config: dict) -> None:
         raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
 
 
+def load_feeds() -> list[str]:
+    """Load just the feed URLs from .env without full config validation."""
+    load_dotenv()
+    return _parse_feeds(os.getenv("SUBSTACK_FEEDS", ""))
+
+
+def add_feed_to_env(feed_url: str) -> None:
+    """Append a feed URL to SUBSTACK_FEEDS in the .env file."""
+    key = "SUBSTACK_FEEDS"
+
+    if ENV_PATH.exists():
+        lines = ENV_PATH.read_text().splitlines()
+        for i, line in enumerate(lines):
+            if line.startswith(f"{key}="):
+                existing = line[len(f"{key}="):]
+                lines[i] = f"{key}={existing},{feed_url}" if existing.strip() else f"{key}={feed_url}"
+                break
+        else:
+            lines.append(f"{key}={feed_url}")
+        ENV_PATH.write_text("\n".join(lines) + "\n")
+    else:
+        ENV_PATH.write_text(f"{key}={feed_url}\n")
+
+
 def save_cookie_to_env(cookie_value: str) -> None:
     """Write or update SUBSTACK_SESSION_COOKIE in the .env file."""
     key = "SUBSTACK_SESSION_COOKIE"
