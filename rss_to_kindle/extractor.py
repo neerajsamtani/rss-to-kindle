@@ -16,6 +16,26 @@ class Article:
     images: dict[str, bytes] = field(default_factory=dict)
 
 
+def _simplify_headers(raw_html: str) -> str:
+    """Strip Substack's anchor widgets from headings so readability preserves them.
+
+    Substack injects a div.header-anchor-parent with nested button/svg inside each
+    heading for the anchor-link icon. The class "header-anchor-post" on the heading
+    itself triggers readability's unlikely-candidate filter (matches "header").
+    We remove the widget div and strip heading classes to prevent both issues.
+    """
+    doc = lxml.html.fromstring(raw_html)
+
+    for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+        for heading in doc.iter(tag):
+            for widget in heading.find_class("header-anchor-parent"):
+                heading.remove(widget)
+            if "class" in heading.attrib:
+                del heading.attrib["class"]
+
+    return lxml.html.tostring(doc, encoding="unicode")
+
+
 def _simplify_images(raw_html: str) -> str:
     """Replace Substack's complex image markup with plain <img> tags.
 
@@ -88,6 +108,7 @@ def extract_article(
     raw_html: str, author: str = "Unknown", published: str = "", session_cookie: str = ""
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
+    raw_html = _simplify_headers(raw_html)
     raw_html = _simplify_images(raw_html)
 
     doc = Document(raw_html)
