@@ -24,7 +24,7 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
     """Check all feeds, fetch new articles, and send to Kindle. Returns count of articles sent."""
     sent_count = 0
 
-    for feed_url in config["substack_feeds"]:
+    for feed_url in config["feeds"]:
         click.echo(f"Checking feed: {feed_url}")
         try:
             articles = fetch_feed(feed_url)
@@ -46,7 +46,11 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
 
             click.echo(f"  Fetching: {feed_article.title}")
             try:
-                raw_html = fetch_article_html(feed_article.url, config["substack_session_cookie"])
+                raw_html = fetch_article_html(
+                    feed_article.url,
+                    config["substack_session_cookie"],
+                    is_substack=feed_article.is_substack,
+                )
             except Exception as e:
                 click.echo(f"    Error fetching article: {e}", err=True)
                 continue
@@ -56,6 +60,7 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                 author=feed_article.author,
                 published=feed_article.published,
                 session_cookie=config["substack_session_cookie"],
+                is_substack=feed_article.is_substack,
             )
 
             click.echo("    Sending to Kindle...")
@@ -86,7 +91,7 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
 
 @click.group()
 def main():
-    """Monitor Substack RSS feeds and send articles to Kindle."""
+    """Monitor RSS feeds and send articles to Kindle."""
     pass
 
 
@@ -119,14 +124,14 @@ def _import_substack_cookie(browser: str) -> None:
     click.echo(f"Found Substack login from {browser}.")
 
 
-@main.command()
+@main.command("substack-login")
 @click.option(
     "--from-browser",
     required=True,
     type=click.Choice(SUPPORTED_BROWSERS),
     help="Browser to read the Substack session cookie from.",
 )
-def login(from_browser):
+def substack_login(from_browser):
     """Import your Substack session cookie from a browser."""
     _import_substack_cookie(from_browser)
 
@@ -192,7 +197,7 @@ def history(limit):
 
 @main.command("list")
 def list_feeds():
-    """Show configured Substack feed URLs."""
+    """Show configured feed URLs."""
     feeds = load_feeds()
     if not feeds:
         click.echo("No feeds configured. Add one with: rss-to-kindle add <url>")
@@ -205,7 +210,7 @@ def list_feeds():
 @main.command()
 @click.argument("url")
 def add(url):
-    """Add a Substack feed URL to your configuration."""
+    """Add a feed URL to your configuration."""
     feeds = load_feeds()
     if url in feeds:
         click.echo(f"Feed already configured: {url}")
@@ -254,7 +259,7 @@ def init():
         _import_substack_cookie(browser)
 
     # Step 3: Add feeds
-    click.echo("\nAdd Substack feed URLs (leave blank to finish):")
+    click.echo("\nAdd feed URLs (leave blank to finish):")
     while True:
         url = click.prompt("Feed URL", default="", show_default=False)
         if not url:
@@ -283,12 +288,10 @@ def preview(url, output):
     """Generate an EPUB locally without sending to Kindle."""
     load_dotenv()
     cookie = os.getenv("SUBSTACK_SESSION_COOKIE", "")
-    if not cookie:
-        raise click.ClickException("Missing SUBSTACK_SESSION_COOKIE in .env")
 
     click.echo(f"Fetching: {url}")
     raw_html = fetch_article_html(url, cookie)
-    article = extract_article(raw_html, author="Unknown", published="", session_cookie=cookie)
+    article = extract_article(raw_html, session_cookie=cookie)
 
     epub_data = build_epub(article)
 

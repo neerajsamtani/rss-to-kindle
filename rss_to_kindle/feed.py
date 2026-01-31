@@ -12,6 +12,7 @@ class FeedArticle:
     url: str
     published: str
     author: str
+    is_substack: bool = False
 
 
 def fetch_feed(feed_url: str) -> list[FeedArticle]:
@@ -20,6 +21,8 @@ def fetch_feed(feed_url: str) -> list[FeedArticle]:
 
     if feed.bozo and not feed.entries:
         raise RuntimeError(f"Failed to parse feed: {feed_url} — {feed.bozo_exception}")
+
+    is_substack = feed.feed.get("generator", "").lower() == "substack"
 
     articles = []
     for entry in feed.entries:
@@ -35,6 +38,7 @@ def fetch_feed(feed_url: str) -> list[FeedArticle]:
                 url=entry.get("link", ""),
                 published=published,
                 author=entry.get("author", "Unknown"),
+                is_substack=is_substack,
             )
         )
 

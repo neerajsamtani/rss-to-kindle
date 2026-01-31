@@ -114,17 +114,20 @@ def _compress_image(data: bytes, max_width: int = 1200, quality: int = 80) -> by
     return buf.getvalue()
 
 
-def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[str, bytes]]:
+def _download_images(html_content: str, session_cookie: str = "") -> tuple[str, dict[str, bytes]]:
     """Download images from HTML, rewrite src attributes, return modified HTML and image data."""
     doc = lxml.html.fromstring(html_content)
     images: dict[str, bytes] = {}
-    cookies = {"substack.sid": session_cookie}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 
     for img in doc.iter("img"):
         src = img.get("src")
         if not src or not src.startswith(("http://", "https://")):
             continue
+        # Only send Substack cookies to Substack's CDN
+        cookies = {}
+        if session_cookie and "substackcdn.com" in src:
+            cookies = {"substack.sid": session_cookie}
         try:
             resp = httpx.get(
                 src, cookies=cookies, headers=headers, follow_redirects=True, timeout=15
@@ -154,12 +157,17 @@ def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[
 
 
 def extract_article(
-    raw_html: str, author: str = "Unknown", published: str = "", session_cookie: str = ""
+    raw_html: str,
+    author: str = "Unknown",
+    published: str = "",
+    session_cookie: str = "",
+    is_substack: bool = False,
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
     meta = _extract_meta(raw_html)
-    raw_html = _simplify_headers(raw_html)
-    raw_html = _simplify_images(raw_html)
+    if is_substack:
+        raw_html = _simplify_headers(raw_html)
+        raw_html = _simplify_images(raw_html)
 
     doc = Document(raw_html)
     title = meta["og_title"] or doc.title()
@@ -167,9 +175,7 @@ def extract_article(
         author = meta["author"]
     content = doc.summary()
 
-    images: dict[str, bytes] = {}
-    if session_cookie:
-        content, images = _download_images(content, session_cookie)
+    content, images = _download_images(content, session_cookie)
 
     return Article(
         title=title,

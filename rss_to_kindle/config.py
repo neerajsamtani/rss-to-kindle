@@ -6,13 +6,26 @@ from dotenv import load_dotenv
 ENV_PATH = Path(".env")
 ENV_EXAMPLE_PATH = Path(".env.example")
 
+# Feed URLs can be stored under either FEEDS or the legacy SUBSTACK_FEEDS key
+_FEED_KEYS = ("FEEDS", "SUBSTACK_FEEDS")
+
+
+def _active_feed_key() -> str:
+    """Return the env key used in the current .env file, defaulting to FEEDS."""
+    if ENV_PATH.exists():
+        text = ENV_PATH.read_text()
+        for key in _FEED_KEYS:
+            if f"{key}=" in text:
+                return key
+    return "FEEDS"
+
 
 def load_config() -> dict:
     """Load configuration from .env file and environment variables."""
     load_dotenv()
 
     config = {
-        "substack_feeds": _parse_feeds(os.getenv("SUBSTACK_FEEDS", "")),
+        "feeds": _parse_feeds(os.getenv("FEEDS", os.getenv("SUBSTACK_FEEDS", ""))),
         "substack_session_cookie": os.getenv("SUBSTACK_SESSION_COOKIE", ""),
         "kindle_email": os.getenv("KINDLE_EMAIL", ""),
         "sender_email": os.getenv("SENDER_EMAIL", ""),
@@ -36,8 +49,7 @@ def _parse_feeds(raw: str) -> list[str]:
 def _validate(config: dict) -> None:
     """Validate that all required config fields are present."""
     required = [
-        ("substack_feeds", "SUBSTACK_FEEDS"),
-        ("substack_session_cookie", "SUBSTACK_SESSION_COOKIE"),
+        ("feeds", "FEEDS"),
         ("kindle_email", "KINDLE_EMAIL"),
         ("sender_email", "SENDER_EMAIL"),
         ("sender_password", "SENDER_PASSWORD"),
@@ -50,12 +62,12 @@ def _validate(config: dict) -> None:
 def load_feeds() -> list[str]:
     """Load just the feed URLs from .env without full config validation."""
     load_dotenv()
-    return _parse_feeds(os.getenv("SUBSTACK_FEEDS", ""))
+    return _parse_feeds(os.getenv("FEEDS", os.getenv("SUBSTACK_FEEDS", "")))
 
 
 def add_feed_to_env(feed_url: str) -> None:
-    """Append a feed URL to SUBSTACK_FEEDS in the .env file."""
-    key = "SUBSTACK_FEEDS"
+    """Append a feed URL to the feeds list in the .env file."""
+    key = _active_feed_key()
 
     if ENV_PATH.exists():
         lines = ENV_PATH.read_text().splitlines()
@@ -97,8 +109,8 @@ def save_kindle_email_to_env(email: str) -> None:
 
 
 def remove_feed_from_env(feed_url: str) -> None:
-    """Remove a feed URL from SUBSTACK_FEEDS in the .env file."""
-    key = "SUBSTACK_FEEDS"
+    """Remove a feed URL from the feeds list in the .env file."""
+    key = _active_feed_key()
 
     if not ENV_PATH.exists():
         raise ValueError(f"Feed not found: {feed_url}")

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python CLI tool that monitors Substack RSS feeds, fetches full paywalled article content using session cookies, and emails them to a Kindle device as EPUB attachments with embedded images and generated covers.
+Python CLI tool that monitors RSS feeds, fetches full article content, and emails them to a Kindle device as EPUB attachments with embedded images and generated covers. Supports any RSS feed; Substack-specific features (session cookies for paywalled content, HTML workarounds) activate automatically when the feed's generator is Substack.
 
 ## Commands
 
@@ -18,7 +18,7 @@ uv run rss-to-kindle fetch --latest     # Only fetch the latest article from eac
 uv run rss-to-kindle fetch --days 7     # Only process articles from the last 7 days (default: 3)
 uv run rss-to-kindle poll               # Continuous: run fetch every POLL_INTERVAL_MINUTES
 uv run rss-to-kindle init                # Interactive first-run setup (Kindle email + optional Substack login)
-uv run rss-to-kindle login --from-browser chrome
+uv run rss-to-kindle substack-login --from-browser chrome
 uv run rss-to-kindle list               # Show configured feed URLs
 uv run rss-to-kindle add <url>          # Add a feed URL to .env
 uv run rss-to-kindle remove <url>       # Remove a feed URL from .env
@@ -95,7 +95,7 @@ The pipeline flows linearly: **feed.py → fetcher.py → extractor.py → kindl
 
 - `config.py` loads `.env` via python-dotenv and validates required fields
 - `feed.py` parses RSS feeds with feedparser, returns `FeedArticle` dataclasses
-- `fetcher.py` fetches full article HTML via httpx using the Substack `substack.sid` session cookie
+- `fetcher.py` fetches full article HTML via httpx (attaches Substack session cookie only for Substack feeds)
 - `extractor.py` extracts clean article content and downloads images (see below)
 - `kindle.py` builds an EPUB with cover image and sends as email attachment via SMTP
 - `state.py` tracks sent article URLs in `~/.rss-to-kindle/sent.json` to prevent duplicates
@@ -111,7 +111,7 @@ Substack wraps images in deeply nested markup (`div.captioned-image-container > 
 
 ## Configuration
 
-All config is via environment variables (`.env` file). See `.env.example` for the template. `SUBSTACK_FEEDS` is comma-separated for multiple feeds.
+All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` (or legacy `SUBSTACK_FEEDS`) is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` is only needed for paid Substack content.
 
 ## Code Style Guidelines
 
