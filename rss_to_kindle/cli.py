@@ -60,7 +60,6 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                     sender_password=config["sender_password"],
                     smtp_host=config["smtp_host"],
                     smtp_port=config["smtp_port"],
-                    session_cookie=config["substack_session_cookie"],
                 )
             except Exception as e:
                 click.echo(f"    Error sending email: {e}", err=True)
@@ -219,7 +218,7 @@ def preview(url, output):
     raw_html = fetch_article_html(url, cookie)
     article = extract_article(raw_html, author="Unknown", published="", session_cookie=cookie)
 
-    epub_data = build_epub(article, session_cookie=cookie)
+    epub_data = build_epub(article)
 
     if output is None:
         safe_title = article.title.replace(":", " -")

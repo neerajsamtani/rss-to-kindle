@@ -90,6 +90,30 @@ def _simplify_images(raw_html: str) -> str:
     return lxml.html.tostring(doc, encoding="unicode")
 
 
+def _compress_image(data: bytes, max_width: int = 1200, quality: int = 80) -> bytes:
+    """Resize and compress an image for Kindle. Returns original bytes on failure."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        img = Image.open(BytesIO(data))
+    except Exception:
+        return data
+
+    if getattr(img, "is_animated", False):
+        return data
+
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+
+    img = img.convert("RGB")
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[str, bytes]]:
     """Download images from HTML, rewrite src attributes, return modified HTML and image data."""
     doc = lxml.html.fromstring(html_content)
@@ -109,17 +133,20 @@ def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[
         except Exception:
             continue
 
-        ext = "jpg"
-        content_type = resp.headers.get("content-type", "")
-        if "png" in content_type:
-            ext = "png"
-        elif "gif" in content_type:
-            ext = "gif"
-        elif "webp" in content_type:
-            ext = "webp"
-
-        filename = f"{hashlib.md5(src.encode()).hexdigest()}.{ext}"
-        images[filename] = resp.content
+        compressed = _compress_image(resp.content)
+        if compressed is not resp.content:
+            filename = f"{hashlib.md5(src.encode()).hexdigest()}.jpg"
+        else:
+            ext = "jpg"
+            content_type = resp.headers.get("content-type", "")
+            if "png" in content_type:
+                ext = "png"
+            elif "gif" in content_type:
+                ext = "gif"
+            elif "webp" in content_type:
+                ext = "webp"
+            filename = f"{hashlib.md5(src.encode()).hexdigest()}.{ext}"
+        images[filename] = compressed
         img.set("src", f"images/{filename}")
 
     modified_html = lxml.html.tostring(doc, encoding="unicode")

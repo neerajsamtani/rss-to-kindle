@@ -10,14 +10,12 @@ from PIL import Image, ImageDraw, ImageFont
 from .extractor import Article
 
 
-def _download_cover_image(url: str, session_cookie: str) -> bytes | None:
+def _download_cover_image(url: str) -> bytes | None:
     """Fetch the og:image, return raw bytes or None on failure."""
     import httpx
 
-    cookies = {"substack.sid": session_cookie} if session_cookie else {}
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
     try:
-        resp = httpx.get(url, cookies=cookies, headers=headers, follow_redirects=True, timeout=15)
+        resp = httpx.get(url, follow_redirects=True, timeout=15)
         resp.raise_for_status()
         return resp.content
     except Exception:
@@ -107,7 +105,7 @@ def _generate_cover(title: str, author: str, background_image: bytes | None = No
     return buf.getvalue()
 
 
-def build_epub(article: Article, session_cookie: str = "") -> bytes:
+def build_epub(article: Article) -> bytes:
     """Build an EPUB file from an article with embedded images and cover."""
     book = epub.EpubBook()
     book.set_identifier(f"rss-to-kindle-{hash(article.title)}")
@@ -118,7 +116,7 @@ def build_epub(article: Article, session_cookie: str = "") -> bytes:
     # Cover — use og:image as hero background when available
     background = None
     if article.cover_image_url:
-        background = _download_cover_image(article.cover_image_url, session_cookie)
+        background = _download_cover_image(article.cover_image_url)
     cover_data = _generate_cover(article.title, article.author, background_image=background)
     book.set_cover("cover.jpg", cover_data)
 
@@ -168,7 +166,6 @@ def send_to_kindle(
     sender_password: str,
     smtp_host: str = "smtp.gmail.com",
     smtp_port: int = 587,
-    session_cookie: str = "",
 ) -> None:
     """Send an article as an EPUB attachment to a Kindle email address."""
     msg = EmailMessage()
@@ -177,7 +174,7 @@ def send_to_kindle(
     msg["To"] = kindle_email
     msg.set_content(f"Article: {article.title}")
 
-    epub_data = build_epub(article, session_cookie=session_cookie)
+    epub_data = build_epub(article)
     safe_title = article.title.replace(":", " -")
     safe_title = "".join(c if c not in '/\\<>"|?*' else "_" for c in safe_title)
     filename = f"{safe_title[:80]}.epub"
