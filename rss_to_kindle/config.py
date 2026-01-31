@@ -13,10 +13,10 @@ _FEED_KEYS = ("FEEDS", "SUBSTACK_FEEDS")
 def _active_feed_key() -> str:
     """Return the env key used in the current .env file, defaulting to FEEDS."""
     if ENV_PATH.exists():
-        text = ENV_PATH.read_text()
-        for key in _FEED_KEYS:
-            if f"{key}=" in text:
-                return key
+        for line in ENV_PATH.read_text().splitlines():
+            for key in _FEED_KEYS:
+                if line.startswith(f"{key}="):
+                    return key
     return "FEEDS"
 
 

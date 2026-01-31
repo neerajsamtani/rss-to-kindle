@@ -125,6 +125,11 @@ def _import_substack_cookie(browser: str) -> None:
     click.echo(f"Found Substack login from {browser}.")
 
 
+def _detect_substack(raw_html: str) -> bool:
+    """Detect whether HTML was served by Substack (works for custom domains too)."""
+    return "substackcdn.com" in raw_html
+
+
 @main.command("substack-login")
 @click.option(
     "--from-browser",
@@ -292,8 +297,18 @@ def preview(url, output):
 
     click.echo(f"Fetching: {url}")
     raw_html = fetch_article_html(url, cookie)
-    is_substack = "captioned-image-container" in raw_html
-    article = extract_article(raw_html, session_cookie=cookie, is_substack=is_substack, url=url)
+    is_substack = _detect_substack(raw_html)
+    # Re-fetch with session cookie if this is a Substack page (handles custom domains)
+    if is_substack and cookie:
+        raw_html = fetch_article_html(url, cookie, is_substack=True)
+    article = extract_article(
+        raw_html,
+        author="Unknown",
+        published="",
+        session_cookie=cookie,
+        is_substack=is_substack,
+        url=url,
+    )
 
     epub_data = build_epub(article)
 
