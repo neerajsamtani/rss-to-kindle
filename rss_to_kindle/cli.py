@@ -2,7 +2,7 @@ import time
 
 import click
 
-from .config import load_config
+from .config import load_config, save_cookie_to_env
 from .extractor import extract_article
 from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
@@ -73,6 +73,43 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
 def main():
     """Monitor Substack RSS feeds and send articles to Kindle."""
     pass
+
+
+SUPPORTED_BROWSERS = ["chrome", "firefox", "opera", "edge", "chromium"]
+
+
+@main.command()
+@click.option(
+    "--from-browser",
+    required=True,
+    type=click.Choice(SUPPORTED_BROWSERS),
+    help="Browser to read the Substack session cookie from.",
+)
+def login(from_browser):
+    """Import your Substack session cookie from a browser."""
+    import browser_cookie3
+
+    loader = getattr(browser_cookie3, from_browser)
+    try:
+        jar = loader(domain_name=".substack.com")
+    except Exception as e:
+        raise click.ClickException(f"Could not read cookies from {from_browser}: {e}")
+
+    cookie_value = None
+    for cookie in jar:
+        if cookie.name == "substack.sid" and "substack.com" in cookie.domain:
+            cookie_value = cookie.value
+            break
+
+    if not cookie_value:
+        raise click.ClickException(
+            f"No Substack session cookie found in {from_browser}.\n"
+            "Log into substack.com in that browser first, then re-run this command."
+        )
+
+    save_cookie_to_env(cookie_value)
+    click.echo(f"Found Substack session cookie from {from_browser}.")
+    click.echo("Saved to .env — you're all set.")
 
 
 @main.command()

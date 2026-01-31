@@ -72,7 +72,7 @@ def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[
     """Download images from HTML, rewrite src attributes, return modified HTML and image data."""
     doc = lxml.html.fromstring(html_content)
     images: dict[str, bytes] = {}
-    cookies = {"connect.sid": session_cookie}
+    cookies = {"substack.sid": session_cookie}
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
     }

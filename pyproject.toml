@@ -12,6 +12,7 @@ dependencies = [
     "Pillow>=11.0.0",
     "python-dotenv>=1.2.1",
     "readability-lxml>=0.8.4.1",
+    "browser-cookie3>=0.19.1",
 ]
 
 [build-system]
