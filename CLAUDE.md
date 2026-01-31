@@ -48,8 +48,9 @@ uv run pytest tests/test_feed.py::test_fetch_feed -v
 ### Linting & Formatting
 
 Ruff is configured in pyproject.toml with:
-- Line length: 100 characters
+- Line length: 100 characters (E501 ignored — the formatter handles wrapping)
 - Target: Python 3.12
+- Double quotes enforced
 - Rules: E, F, I (imports), W, UP (pyupgrade), B (bugbear)
 
 ```bash

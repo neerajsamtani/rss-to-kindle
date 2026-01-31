@@ -10,11 +10,28 @@ from PIL import Image, ImageDraw, ImageFont
 from .extractor import Article
 
 
-def _generate_cover(title: str, author: str) -> bytes:
-    """Generate a simple cover image (600x800) with title and author."""
+def _download_cover_image(url: str, session_cookie: str) -> bytes | None:
+    """Fetch the og:image, return raw bytes or None on failure."""
+    import httpx
+
+    cookies = {"substack.sid": session_cookie} if session_cookie else {}
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+    try:
+        resp = httpx.get(url, cookies=cookies, headers=headers, follow_redirects=True, timeout=15)
+        resp.raise_for_status()
+        return resp.content
+    except Exception:
+        return None
+
+
+def _generate_cover(title: str, author: str, background_image: bytes | None = None) -> bytes:
+    """Generate a cover image (600x900) with title and author.
+
+    When background_image is provided, it is resized to fill the cover and a dark
+    gradient overlay is drawn on the bottom portion for text legibility. Text is
+    anchored to the bottom. Otherwise falls back to a plain dark cover with centered text.
+    """
     width, height = 600, 900
-    img = Image.new("RGB", (width, height), color=(30, 30, 30))
-    draw = ImageDraw.Draw(img)
 
     try:
         title_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 48)
@@ -24,29 +41,73 @@ def _generate_cover(title: str, author: str) -> bytes:
         author_font = ImageFont.load_default(32)
 
     title_lines = wrap(title, width=20)
-
-    # Vertically center the title block
     line_height = 62
-    total_text_height = len(title_lines) * line_height + 60 + 40  # title + gap + author
-    y = (height - total_text_height) // 2
 
-    for line in title_lines:
-        bbox = draw.textbbox((0, 0), line, font=title_font)
+    if background_image:
+        try:
+            img = Image.open(BytesIO(background_image)).convert("RGB")
+        except Exception:
+            background_image = None
+
+    if background_image:
+        # Resize to cover: scale so the image fills 600x900, then center-crop
+        src_w, src_h = img.size
+        scale = max(width / src_w, height / src_h)
+        new_w, new_h = int(src_w * scale), int(src_h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        left = (new_w - width) // 2
+        top = (new_h - height) // 2
+        img = img.crop((left, top, left + width, top + height))
+
+        # Dark gradient overlay on the bottom ~40%
+        gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        gradient_draw = ImageDraw.Draw(gradient)
+        gradient_start = int(height * 0.55)
+        for y_pos in range(gradient_start, height):
+            alpha = int(210 * (y_pos - gradient_start) / (height - gradient_start))
+            gradient_draw.line([(0, y_pos), (width, y_pos)], fill=(0, 0, 0, alpha))
+        img = Image.alpha_composite(img.convert("RGBA"), gradient).convert("RGB")
+
+        draw = ImageDraw.Draw(img)
+
+        # Anchor text to bottom
+        total_text_height = len(title_lines) * line_height + 20 + 40  # title + gap + author
+        y = height - total_text_height - 40  # 40px bottom padding
+
+        for line in title_lines:
+            bbox = draw.textbbox((0, 0), line, font=title_font)
+            text_width = bbox[2] - bbox[0]
+            draw.text(((width - text_width) / 2, y), line, fill="white", font=title_font)
+            y += line_height
+
+        y += 20
+        bbox = draw.textbbox((0, 0), author, font=author_font)
         text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) / 2, y), line, fill="white", font=title_font)
-        y += line_height
+        draw.text(((width - text_width) / 2, y), author, fill=(200, 200, 200), font=author_font)
+    else:
+        img = Image.new("RGB", (width, height), color=(30, 30, 30))
+        draw = ImageDraw.Draw(img)
 
-    y += 60
-    bbox = draw.textbbox((0, 0), author, font=author_font)
-    text_width = bbox[2] - bbox[0]
-    draw.text(((width - text_width) / 2, y), author, fill=(180, 180, 180), font=author_font)
+        total_text_height = len(title_lines) * line_height + 60 + 40
+        y = (height - total_text_height) // 2
+
+        for line in title_lines:
+            bbox = draw.textbbox((0, 0), line, font=title_font)
+            text_width = bbox[2] - bbox[0]
+            draw.text(((width - text_width) / 2, y), line, fill="white", font=title_font)
+            y += line_height
+
+        y += 60
+        bbox = draw.textbbox((0, 0), author, font=author_font)
+        text_width = bbox[2] - bbox[0]
+        draw.text(((width - text_width) / 2, y), author, fill=(180, 180, 180), font=author_font)
 
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=85)
     return buf.getvalue()
 
 
-def build_epub(article: Article) -> bytes:
+def build_epub(article: Article, session_cookie: str = "") -> bytes:
     """Build an EPUB file from an article with embedded images and cover."""
     book = epub.EpubBook()
     book.set_identifier(f"rss-to-kindle-{hash(article.title)}")
@@ -54,8 +115,11 @@ def build_epub(article: Article) -> bytes:
     book.set_language("en")
     book.add_author(article.author)
 
-    # Cover
-    cover_data = _generate_cover(article.title, article.author)
+    # Cover — use og:image as hero background when available
+    background = None
+    if article.cover_image_url:
+        background = _download_cover_image(article.cover_image_url, session_cookie)
+    cover_data = _generate_cover(article.title, article.author, background_image=background)
     book.set_cover("cover.jpg", cover_data)
 
     # Embed article images
@@ -104,6 +168,7 @@ def send_to_kindle(
     sender_password: str,
     smtp_host: str = "smtp.gmail.com",
     smtp_port: int = 587,
+    session_cookie: str = "",
 ) -> None:
     """Send an article as an EPUB attachment to a Kindle email address."""
     msg = EmailMessage()
@@ -112,7 +177,7 @@ def send_to_kindle(
     msg["To"] = kindle_email
     msg.set_content(f"Article: {article.title}")
 
-    epub_data = build_epub(article)
+    epub_data = build_epub(article, session_cookie=session_cookie)
     safe_title = article.title.replace(":", " -")
     safe_title = "".join(c if c not in '/\\<>"|?*' else "_" for c in safe_title)
     filename = f"{safe_title[:80]}.epub"

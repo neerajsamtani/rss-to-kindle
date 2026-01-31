@@ -14,6 +14,28 @@ class Article:
     published: str
     html_content: str
     images: dict[str, bytes] = field(default_factory=dict)
+    cover_image_url: str | None = None
+
+
+def _extract_meta(raw_html: str) -> dict[str, str | None]:
+    """Extract og:image, og:title, and author from meta tags before readability strips them."""
+    doc = lxml.html.fromstring(raw_html)
+    result: dict[str, str | None] = {"og_image": None, "og_title": None, "author": None}
+
+    for prop, key in [("og:image", "og_image"), ("og:title", "og_title")]:
+        meta = doc.find(f'.//meta[@property="{prop}"]')
+        if meta is not None:
+            value = meta.get("content", "").strip()
+            if value:
+                result[key] = value
+
+    author_meta = doc.find('.//meta[@name="author"]')
+    if author_meta is not None:
+        value = author_meta.get("content", "").strip()
+        if value:
+            result["author"] = value
+
+    return result
 
 
 def _simplify_headers(raw_html: str) -> str:
@@ -108,11 +130,14 @@ def extract_article(
     raw_html: str, author: str = "Unknown", published: str = "", session_cookie: str = ""
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
+    meta = _extract_meta(raw_html)
     raw_html = _simplify_headers(raw_html)
     raw_html = _simplify_images(raw_html)
 
     doc = Document(raw_html)
-    title = doc.title()
+    title = meta["og_title"] or doc.title()
+    if author == "Unknown" and meta["author"]:
+        author = meta["author"]
     content = doc.summary()
 
     images: dict[str, bytes] = {}
@@ -125,4 +150,5 @@ def extract_article(
         published=published,
         html_content=content,
         images=images,
+        cover_image_url=meta["og_image"],
     )
