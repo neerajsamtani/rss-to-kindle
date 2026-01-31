@@ -46,7 +46,7 @@ def _generate_cover(title: str, author: str) -> bytes:
     return buf.getvalue()
 
 
-def _build_epub(article: Article) -> bytes:
+def build_epub(article: Article) -> bytes:
     """Build an EPUB file from an article with embedded images and cover."""
     book = epub.EpubBook()
     book.set_identifier(f"rss-to-kindle-{hash(article.title)}")
@@ -112,7 +112,7 @@ def send_to_kindle(
     msg["To"] = kindle_email
     msg.set_content(f"Article: {article.title}")
 
-    epub_data = _build_epub(article)
+    epub_data = build_epub(article)
     safe_title = article.title.replace(":", " -")
     safe_title = "".join(c if c not in '/\\<>"|?*' else "_" for c in safe_title)
     filename = f"{safe_title[:80]}.epub"

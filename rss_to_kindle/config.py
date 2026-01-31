@@ -61,8 +61,10 @@ def add_feed_to_env(feed_url: str) -> None:
         lines = ENV_PATH.read_text().splitlines()
         for i, line in enumerate(lines):
             if line.startswith(f"{key}="):
-                existing = line[len(f"{key}="):]
-                lines[i] = f"{key}={existing},{feed_url}" if existing.strip() else f"{key}={feed_url}"
+                existing = line[len(f"{key}=") :]
+                lines[i] = (
+                    f"{key}={existing},{feed_url}" if existing.strip() else f"{key}={feed_url}"
+                )
                 break
         else:
             lines.append(f"{key}={feed_url}")

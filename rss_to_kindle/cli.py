@@ -1,12 +1,15 @@
+import os
 import time
+from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 
 from .config import add_feed_to_env, load_config, load_feeds, save_cookie_to_env
 from .extractor import extract_article
 from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
-from .kindle import send_to_kindle
+from .kindle import build_epub, send_to_kindle
 from .state import get_history, is_sent, mark_sent
 
 
@@ -199,3 +202,28 @@ def add(url):
 
     add_feed_to_env(url)
     click.echo(f"Added: {url}")
+
+
+@main.command()
+@click.argument("url")
+@click.option("--output", "-o", type=click.Path(), default=None, help="Output path for the EPUB.")
+def preview(url, output):
+    """Generate an EPUB locally without sending to Kindle."""
+    load_dotenv()
+    cookie = os.getenv("SUBSTACK_SESSION_COOKIE", "")
+    if not cookie:
+        raise click.ClickException("Missing SUBSTACK_SESSION_COOKIE in .env")
+
+    click.echo(f"Fetching: {url}")
+    raw_html = fetch_article_html(url, cookie)
+    article = extract_article(raw_html, author="Unknown", published="", session_cookie=cookie)
+
+    epub_data = build_epub(article)
+
+    if output is None:
+        safe_title = article.title.replace(":", " -")
+        safe_title = "".join(c if c not in '/\\<>"|?*' else "_" for c in safe_title)
+        output = f"{safe_title[:80]}.epub"
+
+    Path(output).write_bytes(epub_data)
+    click.echo(f"Saved: {output}")
