@@ -13,13 +13,18 @@ Python CLI tool that monitors Substack RSS feeds, fetches full paywalled article
 uv sync
 
 # Run the CLI
-uv run rss-to-kindle fetch          # One-shot: check feeds, fetch new articles, send to Kindle
-uv run rss-to-kindle fetch --latest # Only fetch the latest article from each feed
-uv run rss-to-kindle poll           # Continuous: run fetch every POLL_INTERVAL_MINUTES
+uv run rss-to-kindle fetch              # One-shot: check feeds, fetch new articles, send to Kindle
+uv run rss-to-kindle fetch --latest     # Only fetch the latest article from each feed
+uv run rss-to-kindle fetch --days 7     # Only process articles from the last 7 days (default: 3)
+uv run rss-to-kindle poll               # Continuous: run fetch every POLL_INTERVAL_MINUTES
 uv run rss-to-kindle login --from-browser chrome
+uv run rss-to-kindle list               # Show configured feed URLs
+uv run rss-to-kindle add <url>          # Add a feed URL to .env
+uv run rss-to-kindle history            # Show recently sent articles
+uv run rss-to-kindle preview <url>      # Generate EPUB locally without sending
 
 # Install in editable mode after pyproject.toml changes
-uv pip install -e .                 # Install in editable mode after changing pyproject.toml
+uv pip install -e .                     # Required after changing pyproject.toml
 ```
 
 ### Testing
@@ -105,50 +110,16 @@ All config is via environment variables (`.env` file). See `.env.example` for th
 
 ## Code Style Guidelines
 
-### Python Version & Types
-- Python 3.12+ required
-- Use type hints on all function signatures: `def func() -> str:`
-- Use `list[str]` instead of `List[str]` (PEP 585 style)
-- Use `dict[str, int]` instead of `Dict[str, int]`
-- Use dataclasses for data containers with `@dataclass`
-
-### Naming Conventions
-- **Functions/variables**: `snake_case` (e.g., `fetch_article_html`)
-- **Classes**: `PascalCase` (e.g., `FeedArticle`)
-- **Constants**: `UPPER_CASE` (e.g., `STATE_FILE`)
-- **Private functions**: `_leading_underscore` (e.g., `_simplify_images`)
-- **Modules**: `snake_case` without underscores preferred (e.g., `feed.py`)
-
-### Imports
-Group and order imports:
-1. Standard library (e.g., `json`, `os`, `datetime`)
-2. Third-party packages (e.g., `click`, `httpx`, `feedparser`)
-3. Local modules (e.g., `from .extractor import Article`)
-
-Use absolute imports for local modules: `from .module import Thing`
+- Python 3.12+ required; use PEP 585 type hints (`list[str]`, not `List[str]`)
+- Use type hints on all function signatures
+- Use dataclasses for data containers
+- Ruff enforces formatting, import ordering, and lint rules — see `pyproject.toml` for config
 
 ### Error Handling
 - For CLI errors, use `click.echo(f"Error: {e}", err=True)` and `continue`
 - For fatal errors, use `raise click.ClickException("message")`
 - For library code, raise appropriate exceptions (e.g., `ValueError`, `RuntimeError`)
 - Catch exceptions at loop boundaries to prevent one bad item from failing the batch
-
-### Comments & Documentation
-- Docstrings for all public functions using `"""triple quotes"""`
-- Comments explain *why*, not *what* — keep them minimal
-- Add comments for complex workarounds (see extractor.py for examples)
-
-### Dependencies
-
-Key libraries in use:
-- `click` — CLI framework
-- `httpx` — HTTP client
-- `feedparser` — RSS parsing
-- `readability-lxml` — HTML content extraction
-- `ebooklib` — EPUB generation
-- `lxml` — HTML parsing
-- `Pillow` — Image processing
-- `browser-cookie3` — Browser cookie extraction
 
 ## Development Philosophy
 

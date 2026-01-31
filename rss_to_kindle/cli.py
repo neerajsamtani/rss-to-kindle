@@ -1,13 +1,16 @@
+import os
 import time
+from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 
-from .config import load_config, save_cookie_to_env
+from .config import add_feed_to_env, load_config, load_feeds, save_cookie_to_env
 from .extractor import extract_article
 from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
-from .kindle import send_to_kindle
-from .state import is_sent, mark_sent
+from .kindle import build_epub, send_to_kindle
+from .state import get_history, is_sent, mark_sent
 
 
 def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> int:
@@ -62,7 +65,12 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                 click.echo(f"    Error sending email: {e}", err=True)
                 continue
 
-            mark_sent(feed_article.url)
+            mark_sent(
+                feed_article.url,
+                title=feed_article.title,
+                author=feed_article.author,
+                feed_url=feed_url,
+            )
             sent_count += 1
             click.echo(f"    Sent: {feed_article.title}")
 
@@ -139,3 +147,83 @@ def poll():
         except KeyboardInterrupt:
             click.echo("\nStopped.")
             break
+
+
+@main.command()
+@click.option("--limit", default=20, type=int, help="Maximum number of articles to show.")
+def history(limit):
+    """Show recently sent articles."""
+    records = get_history()
+    if not records:
+        click.echo("No articles sent yet.")
+        return
+
+    total = len(records)
+    shown = records[:limit]
+
+    for record in shown:
+        title = record.title or record.url
+        click.echo(f"  {title}")
+
+        parts = []
+        if record.author:
+            parts.append(f"by {record.author}")
+        if record.sent_at:
+            parts.append(f"sent {record.sent_at[:10]}")
+        if record.feed_url:
+            parts.append(record.feed_url)
+        if parts:
+            click.echo(f"    {' | '.join(parts)}")
+
+    if total > limit:
+        click.echo(f"\nShowing {limit} of {total}")
+
+
+@main.command("list")
+def list_feeds():
+    """Show configured Substack feed URLs."""
+    feeds = load_feeds()
+    if not feeds:
+        click.echo("No feeds configured. Add one with: rss-to-kindle add <url>")
+        return
+
+    for i, url in enumerate(feeds, 1):
+        click.echo(f"  {i}. {url}")
+
+
+@main.command()
+@click.argument("url")
+def add(url):
+    """Add a Substack feed URL to your configuration."""
+    feeds = load_feeds()
+    if url in feeds:
+        click.echo(f"Feed already configured: {url}")
+        return
+
+    add_feed_to_env(url)
+    click.echo(f"Added: {url}")
+
+
+@main.command()
+@click.argument("url")
+@click.option("--output", "-o", type=click.Path(), default=None, help="Output path for the EPUB.")
+def preview(url, output):
+    """Generate an EPUB locally without sending to Kindle."""
+    load_dotenv()
+    cookie = os.getenv("SUBSTACK_SESSION_COOKIE", "")
+    if not cookie:
+        raise click.ClickException("Missing SUBSTACK_SESSION_COOKIE in .env")
+
+    click.echo(f"Fetching: {url}")
+    raw_html = fetch_article_html(url, cookie)
+    article = extract_article(raw_html, author="Unknown", published="", session_cookie=cookie)
+
+    epub_data = build_epub(article)
+
+    if output is None:
+        safe_title = article.title.replace(":", " -")
+        safe_title = "".join(c if c not in '/\\<>"|?*' else "_" for c in safe_title)
+        output = f"{safe_title[:80]}.epub"
+
+    Path(output).write_bytes(epub_data)
+    click.echo(f"Saved: {output}")
