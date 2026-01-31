@@ -61,6 +61,7 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                 published=feed_article.published,
                 session_cookie=config["substack_session_cookie"],
                 is_substack=feed_article.is_substack,
+                url=feed_article.url,
             )
 
             click.echo("    Sending to Kindle...")
@@ -291,7 +292,8 @@ def preview(url, output):
 
     click.echo(f"Fetching: {url}")
     raw_html = fetch_article_html(url, cookie)
-    article = extract_article(raw_html, session_cookie=cookie)
+    is_substack = "captioned-image-container" in raw_html
+    article = extract_article(raw_html, session_cookie=cookie, is_substack=is_substack, url=url)
 
     epub_data = build_epub(article)
 
