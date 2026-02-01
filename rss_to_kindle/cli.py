@@ -9,7 +9,9 @@ from .config import (
     add_feed_to_env,
     load_config,
     load_feeds,
+    load_substack_cookies,
     remove_feed_from_env,
+    save_connect_cookies_to_env,
     save_cookie_to_env,
     save_kindle_email_to_env,
 )
@@ -50,10 +52,17 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                     feed_article.url,
                     config["substack_session_cookie"],
                     is_substack=feed_article.is_substack,
+                    connect_cookies=config["substack_connect_cookies"],
                 )
             except Exception as e:
                 click.echo(f"    Error fetching article: {e}", err=True)
                 continue
+
+            if feed_article.is_substack:
+                has_cookie = bool(
+                    config["substack_session_cookie"] or config["substack_connect_cookies"]
+                )
+                _check_substack_paywall(raw_html, has_cookie)
 
             article = extract_article(
                 raw_html,
@@ -62,6 +71,7 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                 session_cookie=config["substack_session_cookie"],
                 is_substack=feed_article.is_substack,
                 url=feed_article.url,
+                connect_cookies=config["substack_connect_cookies"],
             )
 
             click.echo("    Sending to Kindle...")
@@ -100,34 +110,84 @@ SUPPORTED_BROWSERS = ["chrome", "firefox", "opera", "edge", "chromium"]
 
 
 def _import_substack_cookie(browser: str) -> None:
-    """Import the Substack session cookie from the given browser and save it to .env."""
+    """Import Substack session cookies from the given browser and save them to .env.
+
+    Substack uses two session cookies: substack.sid on .substack.com and connect.sid
+    on each newsletter's custom domain. We collect connect.sid per domain.
+    """
+    from urllib.parse import urlparse
+
     import browser_cookie3
 
     loader = getattr(browser_cookie3, browser)
-    try:
-        jar = loader(domain_name=".substack.com")
-    except Exception as e:
-        raise click.ClickException(f"Could not read cookies from {browser}: {e}") from e
 
-    cookie_value = None
+    # Collect feed domains so we can filter connect.sid cookies to relevant ones
+    feed_domains: set[str] = set()
+    for feed_url in load_feeds():
+        host = urlparse(feed_url).hostname
+        if host:
+            feed_domains.add(host)
+
+    # Single loader call to avoid repeated keychain/password prompts on macOS
+    try:
+        jar = loader()
+    except Exception as e:
+        raise click.ClickException(
+            f"Could not read cookies from {browser}: {e}\n"
+            "Make sure the browser is closed and try again."
+        ) from e
+
+    session_cookie = ""
+    connect_cookies: dict[str, str] = {}
     for cookie in jar:
         if cookie.name == "substack.sid" and "substack.com" in cookie.domain:
-            cookie_value = cookie.value
-            break
+            session_cookie = cookie.value
+        elif cookie.name == "connect.sid":
+            cookie_domain = cookie.domain.lstrip(".")
+            if cookie_domain in feed_domains:
+                connect_cookies[cookie_domain] = cookie.value
 
-    if not cookie_value:
+    if not session_cookie and not connect_cookies:
         raise click.ClickException(
             f"No Substack session cookie found in {browser}.\n"
             "Log into substack.com in that browser first, then re-run this command."
         )
 
-    save_cookie_to_env(cookie_value)
-    click.echo(f"Found Substack login from {browser}.")
+    found_parts = []
+    if session_cookie:
+        save_cookie_to_env(session_cookie)
+        found_parts.append("SUBSTACK_SESSION_COOKIE")
+    if connect_cookies:
+        # Merge with any existing connect cookies
+        _, existing = load_substack_cookies()
+        existing.update(connect_cookies)
+        save_connect_cookies_to_env(existing)
+        found_parts.append(f"SUBSTACK_CONNECT_COOKIES ({len(existing)} domain(s))")
+    click.echo(f"Found Substack login from {browser} ({', '.join(found_parts)}).")
 
 
 def _detect_substack(raw_html: str) -> bool:
     """Detect whether HTML was served by Substack (works for custom domains too)."""
     return "substackcdn.com" in raw_html
+
+
+def _check_substack_paywall(raw_html: str, has_cookie: bool) -> bool:
+    """Return True if a Substack paywall is detected, and warn the user."""
+    if 'class="paywall"' not in raw_html:
+        return False
+    if has_cookie:
+        click.echo(
+            "    Warning: Paywall detected — your Substack session cookie may be expired.\n"
+            "    Run: rss-to-kindle substack-login --from-browser <browser>",
+            err=True,
+        )
+    else:
+        click.echo(
+            "    Warning: Paywall detected — no Substack session cookies configured.\n"
+            "    Run: rss-to-kindle substack-login --from-browser <browser>",
+            err=True,
+        )
+    return True
 
 
 @main.command("substack-login")
@@ -223,7 +283,37 @@ def add(url):
         return
 
     add_feed_to_env(url)
+    load_dotenv(override=True)  # refresh so _import_substack_cookie sees the new feed
     click.echo(f"Added: {url}")
+
+    # Detect Substack feeds and offer to import cookies for paid newsletters
+    try:
+        articles = fetch_feed(url)
+    except Exception:
+        return
+
+    if not articles or not articles[0].is_substack:
+        return
+
+    from urllib.parse import urlparse
+
+    hostname = urlparse(url).hostname
+    _, connect_cookies = load_substack_cookies()
+    if hostname and hostname in connect_cookies:
+        return
+
+    if not click.confirm(
+        "This is a Substack newsletter. Is it a paid subscription?", default=False
+    ):
+        return
+
+    click.echo(
+        "Make sure you're logged into substack.com in your browser."
+        "\nNote: you may see a pop-up asking you to authenticate"
+        " so we can read your login state."
+    )
+    browser = click.prompt("Which browser?", type=click.Choice(SUPPORTED_BROWSERS))
+    _import_substack_cookie(browser)
 
 
 @main.command()
@@ -251,7 +341,16 @@ def init():
     )
     click.confirm("Done?", default=True)
 
-    # Step 2: Substack login
+    # Step 2: Add feeds
+    click.echo("\nAdd feed URLs (leave blank to finish):")
+    while True:
+        url = click.prompt("Feed URL", default="", show_default=False)
+        if not url:
+            break
+        add_feed_to_env(url)
+        click.echo(f"  Added: {url}")
+
+    # Step 3: Substack login
     if click.confirm("\nDo you have any paid Substack subscriptions?"):
         click.echo(
             "Make sure you're logged into substack.com in your browser."
@@ -263,15 +362,6 @@ def init():
             type=click.Choice(SUPPORTED_BROWSERS),
         )
         _import_substack_cookie(browser)
-
-    # Step 3: Add feeds
-    click.echo("\nAdd feed URLs (leave blank to finish):")
-    while True:
-        url = click.prompt("Feed URL", default="", show_default=False)
-        if not url:
-            break
-        add_feed_to_env(url)
-        click.echo(f"  Added: {url}")
 
     click.echo("\nSetup complete! Run 'rss-to-kindle fetch' to send articles to your Kindle.")
 
@@ -292,22 +382,30 @@ def remove(url):
 @click.option("--output", "-o", type=click.Path(), default=None, help="Output path for the EPUB.")
 def preview(url, output):
     """Generate an EPUB locally without sending to Kindle."""
-    load_dotenv()
-    cookie = os.getenv("SUBSTACK_SESSION_COOKIE", "")
+    session_cookie, connect_cookies = load_substack_cookies()
 
     click.echo(f"Fetching: {url}")
-    raw_html = fetch_article_html(url, cookie)
+    # Fetch without cookies first to avoid sending auth to non-Substack sites
+    raw_html = fetch_article_html(url)
     is_substack = _detect_substack(raw_html)
-    # Re-fetch with session cookie if this is a Substack page (handles custom domains)
-    if is_substack and cookie:
-        raw_html = fetch_article_html(url, cookie, is_substack=True)
+
+    if is_substack:
+        has_cookie = bool(session_cookie or connect_cookies)
+        # Re-fetch with cookies to unlock paywalled content
+        if has_cookie:
+            raw_html = fetch_article_html(
+                url, session_cookie, is_substack=True, connect_cookies=connect_cookies
+            )
+        _check_substack_paywall(raw_html, has_cookie)
+
     article = extract_article(
         raw_html,
         author="Unknown",
         published="",
-        session_cookie=cookie,
+        session_cookie=session_cookie,
         is_substack=is_substack,
         url=url,
+        connect_cookies=connect_cookies,
     )
 
     epub_data = build_epub(article)

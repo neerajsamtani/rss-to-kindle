@@ -1,7 +1,7 @@
 import hashlib
 import json
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import lxml.html
@@ -117,7 +117,10 @@ def _compress_image(data: bytes, max_width: int = 1200, quality: int = 80) -> by
 
 
 def _download_images(
-    html_content: str, session_cookie: str = "", base_url: str = ""
+    html_content: str,
+    session_cookie: str = "",
+    base_url: str = "",
+    connect_cookies: dict[str, str] | None = None,
 ) -> tuple[str, dict[str, bytes]]:
     """Download images from HTML, rewrite src attributes, return modified HTML and image data."""
     doc = lxml.html.fromstring(html_content)
@@ -135,8 +138,13 @@ def _download_images(
                 continue
         # Only send Substack cookies to Substack's CDN
         cookies = {}
-        if session_cookie and "substackcdn.com" in src:
-            cookies = {"substack.sid": session_cookie}
+        if "substackcdn.com" in src:
+            if session_cookie:
+                cookies["substack.sid"] = session_cookie
+            # Use the connect.sid for the article's domain (not the CDN domain)
+            connect_cookie = (connect_cookies or {}).get(urlparse(base_url).hostname, "")
+            if connect_cookie:
+                cookies["connect.sid"] = connect_cookie
         try:
             resp = httpx.get(
                 src, cookies=cookies, headers=headers, follow_redirects=True, timeout=15
@@ -176,6 +184,7 @@ def extract_article(
     session_cookie: str = "",
     is_substack: bool = False,
     url: str = "",
+    connect_cookies: dict[str, str] | None = None,
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
     meta = _extract_meta(raw_html)
@@ -189,7 +198,9 @@ def extract_article(
         author = meta["author"]
     content = doc.summary()
 
-    content, images = _download_images(content, session_cookie, base_url=url)
+    content, images = _download_images(
+        content, session_cookie, base_url=url, connect_cookies=connect_cookies
+    )
 
     return Article(
         title=title,

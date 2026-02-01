@@ -95,7 +95,7 @@ The pipeline flows linearly: **feed.py → fetcher.py → extractor.py → kindl
 
 - `config.py` loads `.env` via python-dotenv and validates required fields
 - `feed.py` parses RSS feeds with feedparser, returns `FeedArticle` dataclasses
-- `fetcher.py` fetches full article HTML via httpx (attaches Substack session cookie only for Substack feeds)
+- `fetcher.py` fetches full article HTML via httpx (attaches Substack session cookies only for Substack feeds)
 - `extractor.py` extracts clean article content and downloads images (see below)
 - `kindle.py` builds an EPUB with cover image and sends as email attachment via SMTP
 - `state.py` tracks sent article URLs in `~/.rss-to-kindle/sent.json` to prevent duplicates
@@ -111,7 +111,7 @@ Substack wraps images in deeply nested markup (`div.captioned-image-container > 
 
 ## Configuration
 
-All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` (or legacy `SUBSTACK_FEEDS`) is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` is only needed for paid Substack content.
+All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` and `SUBSTACK_CONNECT_COOKIES` are only needed for paid Substack content — Substack uses `substack.sid` on `.substack.com` and per-domain `connect.sid` cookies on custom newsletter domains. `SUBSTACK_CONNECT_COOKIES` is a JSON dict mapping domains to cookie values (e.g. `{"newsletter.example.com":"s%3A..."}`).
 
 ## Code Style Guidelines
 
