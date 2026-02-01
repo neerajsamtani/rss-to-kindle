@@ -1,6 +1,7 @@
 import hashlib
 import json
 from dataclasses import dataclass, field
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import lxml.html
@@ -91,7 +92,7 @@ def _simplify_images(raw_html: str) -> str:
 
 
 def _compress_image(data: bytes, max_width: int = 1200, quality: int = 80) -> bytes:
-    """Resize and compress an image for Kindle. Returns original bytes on failure."""
+    """Resize and compress an image for Kindle. Returns original bytes if no resize needed."""
     from io import BytesIO
 
     from PIL import Image
@@ -104,27 +105,46 @@ def _compress_image(data: bytes, max_width: int = 1200, quality: int = 80) -> by
     if getattr(img, "is_animated", False):
         return data
 
-    if img.width > max_width:
-        ratio = max_width / img.width
-        img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+    if img.width <= max_width:
+        return data
 
+    ratio = max_width / img.width
+    img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
     img = img.convert("RGB")
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
 
 
-def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[str, bytes]]:
+def _download_images(
+    html_content: str,
+    session_cookie: str = "",
+    base_url: str = "",
+    connect_cookies: dict[str, str] | None = None,
+) -> tuple[str, dict[str, bytes]]:
     """Download images from HTML, rewrite src attributes, return modified HTML and image data."""
     doc = lxml.html.fromstring(html_content)
     images: dict[str, bytes] = {}
-    cookies = {"substack.sid": session_cookie}
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 
     for img in doc.iter("img"):
         src = img.get("src")
-        if not src or not src.startswith(("http://", "https://")):
+        if not src:
             continue
+        if not src.startswith(("http://", "https://")):
+            if base_url:
+                src = urljoin(base_url, src)
+            else:
+                continue
+        # Only send Substack cookies to Substack's CDN
+        cookies = {}
+        if "substackcdn.com" in src:
+            if session_cookie:
+                cookies["substack.sid"] = session_cookie
+            # Use the connect.sid for the article's domain (not the CDN domain)
+            connect_cookie = (connect_cookies or {}).get(urlparse(base_url).hostname, "")
+            if connect_cookie:
+                cookies["connect.sid"] = connect_cookie
         try:
             resp = httpx.get(
                 src, cookies=cookies, headers=headers, follow_redirects=True, timeout=15
@@ -148,18 +168,29 @@ def _download_images(html_content: str, session_cookie: str) -> tuple[str, dict[
             filename = f"{hashlib.md5(src.encode()).hexdigest()}.{ext}"
         images[filename] = compressed
         img.set("src", f"images/{filename}")
+        # Strip responsive attributes that are meaningless in EPUB and confuse some readers
+        for attr in ("srcset", "sizes"):
+            if attr in img.attrib:
+                del img.attrib[attr]
 
     modified_html = lxml.html.tostring(doc, encoding="unicode")
     return modified_html, images
 
 
 def extract_article(
-    raw_html: str, author: str = "Unknown", published: str = "", session_cookie: str = ""
+    raw_html: str,
+    author: str = "Unknown",
+    published: str = "",
+    session_cookie: str = "",
+    is_substack: bool = False,
+    url: str = "",
+    connect_cookies: dict[str, str] | None = None,
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
     meta = _extract_meta(raw_html)
-    raw_html = _simplify_headers(raw_html)
-    raw_html = _simplify_images(raw_html)
+    if is_substack:
+        raw_html = _simplify_headers(raw_html)
+        raw_html = _simplify_images(raw_html)
 
     doc = Document(raw_html)
     title = meta["og_title"] or doc.title()
@@ -167,9 +198,9 @@ def extract_article(
         author = meta["author"]
     content = doc.summary()
 
-    images: dict[str, bytes] = {}
-    if session_cookie:
-        content, images = _download_images(content, session_cookie)
+    content, images = _download_images(
+        content, session_cookie, base_url=url, connect_cookies=connect_cookies
+    )
 
     return Article(
         title=title,
