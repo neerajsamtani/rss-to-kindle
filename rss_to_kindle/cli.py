@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import click
@@ -25,6 +26,10 @@ from .state import get_history, is_sent, mark_sent
 
 def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> int:
     """Check all feeds, fetch new articles, and send to Kindle. Returns count of articles sent."""
+    _warn_cookie_expiry(
+        config.get("substack_session_cookie_expires"),
+        _load_connect_cookies_raw(),
+    )
     sent_count = 0
 
     for feed_url in config["feeds"]:
@@ -109,6 +114,58 @@ def main():
 
 SUPPORTED_BROWSERS = ["chrome", "firefox", "opera", "edge", "chromium"]
 
+COOKIE_EXPIRY_WARNING_DAYS = 7
+
+
+def _load_connect_cookies_raw() -> dict[str, dict]:
+    """Load the raw SUBSTACK_CONNECT_COOKIES JSON (with expiry metadata intact)."""
+    import json
+
+    raw = os.getenv("SUBSTACK_CONNECT_COOKIES", "")
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(data, dict):
+        return {k: v for k, v in data.items() if isinstance(v, dict)}
+    return {}
+
+
+def _warn_cookie_expiry(
+    session_expires: int | None = None,
+    connect_cookies: dict[str, dict] | None = None,
+) -> None:
+    """Warn the user if any Substack cookies are expired or expiring soon."""
+    now = datetime.now(UTC)
+    warnings: list[str] = []
+
+    if session_expires is not None:
+        expiry = datetime.fromtimestamp(session_expires, tz=UTC)
+        days_left = (expiry - now).days
+        if days_left < 0:
+            warnings.append("substack.sid cookie has expired.")
+        elif days_left < COOKIE_EXPIRY_WARNING_DAYS:
+            warnings.append(f"substack.sid cookie expires in {days_left} day(s).")
+
+    for domain, entry in (connect_cookies or {}).items():
+        expires = entry.get("expires") if isinstance(entry, dict) else None
+        if expires is None:
+            continue
+        expiry = datetime.fromtimestamp(expires, tz=UTC)
+        days_left = (expiry - now).days
+        if days_left < 0:
+            warnings.append(f"connect.sid cookie for {domain} has expired.")
+        elif days_left < COOKIE_EXPIRY_WARNING_DAYS:
+            warnings.append(f"connect.sid cookie for {domain} expires in {days_left} day(s).")
+
+    for warning in warnings:
+        click.echo(
+            f"Warning: {warning}\n  Run: rss-to-kindle substack-login --from-browser <browser>",
+            err=True,
+        )
+
 
 def _import_substack_cookie(browser: str) -> None:
     """Import Substack session cookies from the given browser and save them to .env.
@@ -139,14 +196,19 @@ def _import_substack_cookie(browser: str) -> None:
         ) from e
 
     session_cookie = ""
-    connect_cookies: dict[str, str] = {}
+    session_expires: int | None = None
+    connect_cookies: dict[str, dict] = {}
     for cookie in jar:
         if cookie.name == "substack.sid" and "substack.com" in cookie.domain:
             session_cookie = cookie.value
+            session_expires = cookie.expires
         elif cookie.name == "connect.sid":
             cookie_domain = cookie.domain.lstrip(".")
             if cookie_domain in feed_domains:
-                connect_cookies[cookie_domain] = cookie.value
+                entry: dict = {"value": cookie.value}
+                if cookie.expires is not None:
+                    entry["expires"] = cookie.expires
+                connect_cookies[cookie_domain] = entry
 
     if not session_cookie and not connect_cookies:
         raise click.ClickException(
@@ -156,15 +218,17 @@ def _import_substack_cookie(browser: str) -> None:
 
     found_parts = []
     if session_cookie:
-        save_cookie_to_env(session_cookie)
+        save_cookie_to_env(session_cookie, session_expires)
         found_parts.append("SUBSTACK_SESSION_COOKIE")
     if connect_cookies:
-        # Merge with any existing connect cookies
+        # Merge with any existing connect cookies (raw JSON format)
         _, existing = load_substack_cookies()
-        existing.update(connect_cookies)
-        save_connect_cookies_to_env(existing)
-        found_parts.append(f"SUBSTACK_CONNECT_COOKIES ({len(existing)} domain(s))")
+        existing_raw = _load_connect_cookies_raw()
+        existing_raw.update(connect_cookies)
+        save_connect_cookies_to_env(existing_raw)
+        found_parts.append(f"SUBSTACK_CONNECT_COOKIES ({len(existing_raw)} domain(s))")
     click.echo(f"Found Substack login from {browser} ({', '.join(found_parts)}).")
+    _warn_cookie_expiry(session_expires, connect_cookies)
 
 
 def _detect_substack(raw_html: str) -> bool:

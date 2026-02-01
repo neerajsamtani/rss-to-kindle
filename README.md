@@ -25,8 +25,8 @@ Edit `.env` with your values:
 | Variable | Description |
 |---|---|
 | `FEEDS` | Comma-separated RSS feed URLs |
-| `SUBSTACK_SESSION_COOKIE` | Substack `substack.sid` cookie — only needed for paid content (see step 2) |
-| `SUBSTACK_CONNECT_COOKIES` | JSON dict of per-domain `connect.sid` cookies (e.g. `{"newsletter.example.com":"s%3A..."}`) — only needed for paid content on custom domains |
+| `SUBSTACK_SESSION_COOKIE` | JSON with Substack `substack.sid` cookie value and expiry (e.g. `{"value": "s%3A...", "expires": 1234567890}`) — only needed for paid content (see step 2) |
+| `SUBSTACK_CONNECT_COOKIES` | JSON dict of per-domain `connect.sid` cookies with expiry (e.g. `{"newsletter.example.com": {"value": "s%3A...", "expires": 1234567890}}`) — only needed for paid content on custom domains |
 | `KINDLE_EMAIL` | Your Kindle's email address (e.g. `name@kindle.com`) |
 | `SENDER_EMAIL` | Email address to send from |
 | `SENDER_PASSWORD` | App password for the sender email |
@@ -44,7 +44,7 @@ uv run rss-to-kindle substack-login --from-browser chrome
 
 Supported browsers: `chrome`, `firefox`, `opera`, `edge`, `chromium`.
 
-This saves both `substack.sid` and `connect.sid` cookies to your `.env` file automatically.
+This saves both `substack.sid` and `connect.sid` cookies (with expiry dates) to your `.env` file automatically. You'll be warned when cookies are about to expire or have already expired.
 
 ### 3. Approve the sender email on Amazon
 
