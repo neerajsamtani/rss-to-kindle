@@ -1,6 +1,6 @@
 # Chrome Extension Conversion Plan
 
-This document outlines a plan to convert rss-to-kindle from a Python CLI tool to a Chrome browser extension backed by a centralized server.
+This document outlines a plan to convert rss-to-kindle from a Python CLI tool to a Chrome browser extension backed by a centrally-hosted server.
 
 ## Current Architecture
 
@@ -16,13 +16,13 @@ The pipeline is linear and stateless: parse RSS feeds, fetch article HTML, extra
 
 A pure extension approach would move the entire pipeline into a background service worker. The problem: Manifest V3 service workers only run while Chrome is open, and they terminate after ~30 seconds of inactivity. Polling for new articles requires the browser to be running 24/7.
 
-A hybrid architecture keeps the server doing what it already does (polling, fetching, building EPUBs, emailing) while the extension provides a proper UI and — critically — seamless cookie forwarding so the server can access paywalled Substack content.
+A hybrid architecture keeps a centrally-hosted server doing the heavy lifting (polling, fetching, building EPUBs, emailing) while the extension provides a proper UI and — critically — seamless cookie forwarding so the server can access paywalled Substack content.
 
 ## Hybrid Architecture
 
 ```
 ┌──────────────────────────────────┐         ┌─────────────────────────────┐
-│        Chrome Extension          │         │     Centralized Server      │
+│        Chrome Extension          │         │   Centrally-Hosted Server   │
 │                                  │         │                             │
 │  Options Page                    │         │  API Layer                  │
 │    - Kindle email                │────────►│    - POST /config           │
@@ -40,8 +40,8 @@ A hybrid architecture keeps the server doing what it already does (polling, fetc
 │    - Warn on expiry              │         │    - Periodic polling       │
 │                                  │         │    - Per-user intervals     │
 │  Notifications listener          │◄────────│                             │
-│    - Article sent                │ events  │  Database                   │
-│    - Errors / cookie warnings    │         │    - User config            │
+│    - Article sent                │ events  │  Database (PostgreSQL)      │
+│    - Errors / cookie warnings    │         │    - User accounts          │
 │                                  │         │    - Cookies (encrypted)    │
 └──────────────────────────────────┘         │    - Sent article state     │
                                              └─────────────────────────────┘
@@ -78,7 +78,8 @@ An alternative is having the server ask the extension to fetch paywalled pages (
     "storage",
     "cookies",
     "notifications",
-    "alarms"
+    "alarms",
+    "identity"
   ],
   "host_permissions": [
     "*://*.substack.com/*"
@@ -93,14 +94,31 @@ An alternative is having the server ask the extension to fetch paywalled pages (
   "action": {
     "default_popup": "popup.html"
   },
-  "options_page": "options.html"
+  "options_page": "options.html",
+  "oauth2": {
+    "client_id": "<google-client-id>.apps.googleusercontent.com",
+    "scopes": ["openid", "email"]
+  }
 }
 ```
 
 Notes:
 - `cookies` permission + `host_permissions` for `*.substack.com` gives access to `substack.sid` cookies. For custom Substack domains, `optional_host_permissions` lets the user grant access per-domain when they add a feed.
 - `alarms` is used for periodic cookie checks and polling the server for status updates.
-- No `identity` permission needed — auth is handled server-side, not via Gmail OAuth.
+- `identity` + `oauth2` are for Google Sign-In — users authenticate with the centralized server via their Google account (see Authentication section below).
+
+### Authentication
+
+With a centralized server, users need accounts. Google Sign-In via `chrome.identity` is the natural choice — the extension already lives in Chrome, and the user likely has a Google account (they need Gmail for sending to Kindle anyway).
+
+Flow:
+1. User installs extension, clicks "Sign In with Google" on the Options page.
+2. Extension calls `chrome.identity.getAuthToken()` to get a Google OAuth token.
+3. Extension sends the token to `POST /auth/google` on the server.
+4. Server verifies the token with Google, creates or retrieves the user account, and returns a session token (JWT).
+5. Extension stores the JWT in `chrome.storage.local` and includes it in all subsequent API requests.
+
+This eliminates manual API key generation. No passwords, no setup friction — just one click.
 
 ### Cookie Forwarding
 
@@ -123,7 +141,7 @@ chrome.cookies.onChanged.addListener(({ cookie, removed }) => {
 ### UI Screens
 
 **Popup** (click extension icon):
-- Server connection status (connected / last sync time)
+- Account status (signed in as user@gmail.com)
 - List of feeds with last-checked timestamp
 - Recent sends (last 5 articles: title, feed, time)
 - "Fetch Now" button
@@ -131,7 +149,7 @@ chrome.cookies.onChanged.addListener(({ cookie, removed }) => {
 - Link to Options page
 
 **Options page**:
-- Server URL + API key (for authenticating with the server)
+- Account: Google Sign-In button (or signed-in state with sign-out option)
 - Kindle email
 - Feed management (add / remove URLs, shows Substack detection status)
 - Polling interval selector
@@ -144,7 +162,7 @@ chrome.cookies.onChanged.addListener(({ cookie, removed }) => {
 |---|---|
 | `fetch` | "Fetch Now" button → `POST /fetch-now` to server |
 | `poll` | Server-side scheduler (configurable interval via Options) |
-| `init` | First-run detection: if no server URL configured, show setup flow |
+| `init` | First-run: Google Sign-In → Kindle email prompt → feed setup |
 | `list` | Options page — feed list section |
 | `add <url>` | Options page form or popup input → `POST /config/feeds` |
 | `remove <url>` | Options page delete button → `DELETE /config/feeds/:url` |
@@ -161,108 +179,159 @@ The existing Python pipeline (`feed.py`, `fetcher.py`, `extractor.py`, `kindle.p
 1. **config.py** → Read config from database instead of `.env`
 2. **state.py** → Read/write sent state from database instead of `sent.json`
 3. **New: api.py** → HTTP API layer for the extension
-4. **New: db.py** → Database models and queries
-5. **New: scheduler.py** → Per-user polling scheduler (replaces cron / GitHub Actions)
-6. **cli.py** → Kept for direct server-side use, but no longer the primary interface
+4. **New: auth.py** → Google OAuth token verification + JWT session management
+5. **New: db.py** → Database models and queries
+6. **New: scheduler.py** → Per-user polling scheduler (replaces cron / GitHub Actions)
+7. **cli.py** → Kept for admin/debugging, but no longer the primary interface
+
+### Email Sending: Server-Managed SMTP
+
+With a centralized server, there are two options for SMTP:
+
+**Option A — Shared sender (recommended)**:
+- The server sends all emails from a single service address (e.g., `noreply@rsstokindle.com`) using a transactional email service (SES, Postmark, Sendgrid, etc.).
+- Users add this address to their Kindle's approved sender list during onboarding.
+- Users never provide SMTP credentials. Simpler setup, no credential storage per user.
+- The server pays for email sending, but volume is low (a few emails per user per day).
+
+**Option B — User-provided SMTP**:
+- Users provide their own Gmail app password, like the current CLI.
+- Server stores and uses their credentials. More complex, more credential risk.
+
+Option A is strongly preferred. It removes an entire category of sensitive data (user SMTP passwords) and simplifies onboarding to: sign in → enter Kindle email → approve sender → add feeds.
 
 ### API Endpoints
 
 ```
-Authentication: API key per user (generated on first setup)
+Authentication: JWT bearer token (obtained via Google Sign-In flow)
 
+POST   /auth/google        — Exchange Google OAuth token for JWT session
 POST   /config              — Update user config (kindle_email, feeds, interval)
 GET    /config              — Get current config
 POST   /cookies             — Push Substack cookies from extension
 GET    /history             — Get sent article history (with pagination)
 POST   /fetch-now           — Trigger immediate pipeline run
 GET    /status              — Server health + last fetch time per feed
+DELETE /account              — Delete account and all associated data
 ```
 
 ### Database Schema
 
 ```sql
--- User config (replaces .env)
+-- User accounts (replaces .env, one row per user)
 CREATE TABLE users (
-    id            TEXT PRIMARY KEY,  -- API key
-    kindle_email  TEXT NOT NULL,
-    sender_email  TEXT NOT NULL,
-    sender_password TEXT NOT NULL,   -- encrypted
-    smtp_host     TEXT DEFAULT 'smtp.gmail.com',
-    smtp_port     INTEGER DEFAULT 587,
-    poll_interval_minutes INTEGER DEFAULT 360
+    id                    SERIAL PRIMARY KEY,
+    google_id             TEXT UNIQUE NOT NULL,
+    email                 TEXT NOT NULL,
+    kindle_email          TEXT,
+    poll_interval_minutes INTEGER DEFAULT 360,
+    created_at            TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Feed URLs (replaces FEEDS env var)
 CREATE TABLE feeds (
-    id      INTEGER PRIMARY KEY,
-    user_id TEXT REFERENCES users(id),
+    id      SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     url     TEXT NOT NULL,
     UNIQUE(user_id, url)
 );
 
 -- Substack cookies (replaces SUBSTACK_SESSION_COOKIE / SUBSTACK_CONNECT_COOKIES)
 CREATE TABLE cookies (
-    id      INTEGER PRIMARY KEY,
-    user_id TEXT REFERENCES users(id),
+    id      SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     domain  TEXT NOT NULL,
     name    TEXT NOT NULL,
-    value   TEXT NOT NULL,          -- encrypted
-    expires INTEGER,               -- unix timestamp
+    value   TEXT NOT NULL,          -- encrypted at rest
+    expires BIGINT,                 -- unix timestamp
     UNIQUE(user_id, domain, name)
 );
 
 -- Sent articles (replaces sent.json)
 CREATE TABLE sent_articles (
-    id        INTEGER PRIMARY KEY,
-    user_id   TEXT REFERENCES users(id),
+    id        SERIAL PRIMARY KEY,
+    user_id   INTEGER REFERENCES users(id) ON DELETE CASCADE,
     url       TEXT NOT NULL,
     title     TEXT,
     author    TEXT,
     feed_url  TEXT,
-    sent_at   TEXT NOT NULL,       -- ISO 8601
+    sent_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, url)
 );
 ```
 
-A lightweight option like SQLite works for single-server deployment. For multi-user scale, PostgreSQL.
+PostgreSQL is the right choice for a centrally-hosted multi-user service. `ON DELETE CASCADE` ensures clean account deletion.
 
 ### Scheduler
 
-Replace GitHub Actions cron with an in-process scheduler (e.g., APScheduler or a simple asyncio loop). Each user has their own polling interval. On each tick:
+Use a task queue (Celery with Redis, or a lighter option like `arq` or `huey`) rather than an in-process loop. Benefits for a hosted service:
+- Worker processes are separate from the API server — a slow fetch doesn't block API responses.
+- Celery beat (or equivalent) handles per-user periodic schedules.
+- Failed tasks get retried automatically.
+- Scales horizontally by adding more workers.
 
+On each tick per user:
 1. Load user's config and cookies from database
-2. Run `_process_feeds()` with those values (the existing pipeline function)
+2. Run `_process_feeds()` with those values
 3. Write results to database
-4. Optionally notify the extension via a status endpoint
+4. Send email via the shared sender
+
+`POST /fetch-now` enqueues an immediate task for the user.
+
+### Rate Limiting and Abuse Prevention
+
+A centrally-hosted server is open to abuse. Mitigations:
+
+- **Feed limits**: Cap feeds per user (e.g., 20). Prevents a single user from hammering thousands of RSS endpoints.
+- **Fetch rate limiting**: `POST /fetch-now` is rate-limited (e.g., 1 per 5 minutes per user). Scheduled fetches already have natural limits via `poll_interval_minutes`.
+- **Email volume**: Cap emails per user per day (e.g., 50). Prevents using the service as a spam relay.
+- **Account limits**: One account per Google identity. No anonymous access.
+- **Cookie push rate**: Rate-limit `POST /cookies` (e.g., 10 per minute) to prevent abuse of the cookie storage endpoint.
 
 ### Security Considerations
 
-- **Cookie storage**: Substack session cookies are sensitive credentials. Encrypt at rest in the database (e.g., Fernet symmetric encryption with a server-side key). The CLI already stores them in plaintext in `.env`, so this is an improvement.
-- **API authentication**: Each user gets an API key. The extension stores it in `chrome.storage.local`. All API requests include it in an `Authorization` header.
-- **SMTP credentials**: Encrypted in the database, same as cookies.
-- **HTTPS**: All extension ↔ server communication over HTTPS.
-- **Self-hosted by default**: The server is designed to be self-hosted (like the current CLI), avoiding third-party trust. A hosted option could come later.
+- **Cookie storage**: Substack session cookies are sensitive credentials. Encrypt at rest in the database (e.g., Fernet symmetric encryption with a server-managed key, or use PostgreSQL's pgcrypto). Since this is a centrally-hosted service, the server operator has access to the encryption key — this is a trust tradeoff users accept by using a hosted service instead of self-hosting.
+- **Authentication**: Google Sign-In via OAuth 2.0. Server verifies tokens with Google's tokeninfo endpoint. Sessions are JWT with short expiry + refresh.
+- **No user SMTP credentials**: Using a shared sender (Option A above) means the server never stores user email passwords.
+- **HTTPS**: All traffic over HTTPS. HSTS headers enforced.
+- **Account deletion**: `DELETE /account` removes all user data (config, cookies, history) via cascading deletes. Required for GDPR compliance.
+- **Data minimization**: Only store what's needed. Cookies are encrypted. Sent article history can be pruned after a configurable retention period.
+- **Audit logging**: Log authentication events and cookie pushes for security monitoring.
+
+### Infrastructure
+
+A reasonable starting point:
+- **API + scheduler**: Single VPS or a small container service (Fly.io, Railway, Render). FastAPI + Uvicorn for the API, Celery or arq for task processing.
+- **Database**: Managed PostgreSQL (e.g., Supabase, Neon, or the hosting provider's managed offering).
+- **Email**: Transactional email service (Amazon SES is cheapest at scale, Postmark is simplest to set up).
+- **Monitoring**: Basic health checks + error alerting (Sentry for exceptions, uptime monitoring for the API).
+
+The entire stack can start on a single $5-10/month VPS. Costs scale linearly with users — each user adds negligible compute (a few HTTP requests and one SMTP send per poll cycle) and small storage (a few KB of config + history rows).
 
 ## Implementation Phases
 
-### Phase 1 — Server API Layer
-- Add a lightweight HTTP framework (FastAPI or Flask) alongside the existing CLI.
-- Implement database models (SQLite initially) for users, feeds, cookies, and sent articles.
+### Phase 1 — Server API Layer + Auth
+- Set up FastAPI project with PostgreSQL (via SQLAlchemy or raw asyncpg).
+- Implement Google OAuth token verification and JWT session management.
+- Implement database models for users, feeds, cookies, and sent articles.
 - Port `config.py` and `state.py` to read/write from the database.
 - Expose the API endpoints listed above.
-- Verify the existing pipeline works with database-backed config.
+- Set up transactional email sending (SES or Postmark) replacing per-user SMTP.
+- Verify the existing pipeline works with database-backed config and shared sender.
 
-### Phase 2 — Server Scheduler
-- Replace GitHub Actions / cron with an in-process scheduler.
-- Per-user polling intervals stored in the database.
-- `POST /fetch-now` endpoint triggers an immediate run.
+### Phase 2 — Server Scheduler + Rate Limiting
+- Set up task queue (Celery/arq) with periodic per-user schedules.
+- `POST /fetch-now` endpoint enqueues an immediate task.
+- Implement rate limiting on all endpoints.
+- Feed and email volume caps per user.
 - Logging and error tracking per fetch run.
 
-### Phase 3 — Extension Scaffold
+### Phase 3 — Extension Scaffold + Auth
 - Set up Manifest V3 project structure (TypeScript + bundler).
-- Build Options page: server URL, API key, Kindle email, feed management.
+- Implement Google Sign-In flow via `chrome.identity.getAuthToken()`.
+- Build Options page: account status, Kindle email, feed management.
 - Build Popup: status, recent sends, "Fetch Now" button.
-- Wire up `chrome.storage.local` for API key persistence.
+- Wire up `chrome.storage.local` for JWT persistence.
 
 ### Phase 4 — Cookie Forwarding
 - Implement `chrome.cookies.onChanged` listener for `substack.sid` and `connect.sid`.
@@ -270,30 +339,34 @@ Replace GitHub Actions cron with an in-process scheduler (e.g., APScheduler or a
 - Initial cookie sync on extension install/startup.
 - Cookie expiry monitoring with `chrome.alarms` + `chrome.notifications`.
 
-### Phase 5 — Status and History
+### Phase 5 — Status, History, and Notifications
 - Popup polls `GET /status` and `GET /history` to show feed state and recent sends.
 - Options page shows full searchable history.
 - Notification listener for server-side events (sent articles, errors, cookie warnings).
 
-### Phase 6 — Polish
-- First-run onboarding flow in the extension (detect missing server URL, guide setup).
+### Phase 6 — Polish and Launch
+- First-run onboarding flow (sign in → enter Kindle email → approve sender → add feeds).
 - Error handling and retry logic for API calls.
 - Cookie status indicators in popup (valid / expiring / missing).
 - Extension icon badge showing unread count or error state.
-- Documentation for self-hosting the server.
+- Privacy policy and terms of service (required for Chrome Web Store and Google OAuth).
+- Chrome Web Store listing.
 
-## Key Advantages of the Hybrid Approach
+## Key Advantages of the Centrally-Hosted Approach
 
-1. **24/7 polling** — Server fetches on schedule regardless of whether Chrome is open.
-2. **Seamless cookie sync** — Extension automatically pushes Substack cookies to the server, replacing manual `substack-login --from-browser`.
-3. **Minimal pipeline changes** — The existing Python pipeline stays almost intact; only config/state storage changes.
-4. **No JS EPUB/email complexity** — EPUB generation and SMTP stay in Python on the server, avoiding the need for JS ports of `ebooklib` and `smtplib`.
-5. **Separation of concerns** — Extension handles UI + cookie access; server handles processing + delivery.
+1. **Zero setup for users** — No server to deploy. Install extension, sign in with Google, configure feeds. Done.
+2. **24/7 polling** — Server fetches on schedule regardless of whether Chrome is open.
+3. **Seamless cookie sync** — Extension automatically pushes Substack cookies to the server, replacing manual `substack-login --from-browser`.
+4. **No user SMTP credentials** — Shared sender eliminates the need for users to create Gmail app passwords.
+5. **Minimal pipeline changes** — The existing Python pipeline stays almost intact; only config/state storage changes.
+6. **No JS EPUB/email complexity** — EPUB generation and SMTP stay in Python on the server.
 
 ## Key Risks
 
-1. **Self-hosting barrier**: Users need to run a server, which is more complex than a standalone extension. Mitigate with Docker compose and clear docs. A future hosted tier could remove this requirement.
-2. **Cookie security**: Storing Substack cookies on a server (even self-hosted) expands the attack surface vs. browser-only storage. Mitigate with encryption at rest and HTTPS.
-3. **API key management**: Users need to generate and configure an API key. Keep the setup flow minimal (server generates key, user pastes into extension).
-4. **Server framework choice**: Adding FastAPI/Flask increases the dependency surface. Keep the API layer thin — it's just a CRUD wrapper around the existing pipeline.
-5. **Multi-device sync**: If a user has Chrome on multiple devices, each extension instance pushes cookies. The server should handle upserts gracefully (last-write-wins is fine for cookies).
+1. **Operational burden**: Running a hosted service means uptime expectations, monitoring, incident response, and ongoing infrastructure costs. Even a small service needs someone on call.
+2. **Cookie trust**: Users are sending their Substack session cookies to a third-party server. Some users will not be comfortable with this. Transparent privacy policy, encryption at rest, and clear data deletion options help, but the fundamental trust requirement remains.
+3. **Google OAuth consent screen review**: Publishing an app that uses Google Sign-In requires Google's verification process. This can take days to weeks. Start early.
+4. **Chrome Web Store review**: The extension needs broad cookie access (`cookies` permission + `host_permissions`), which receives extra scrutiny during Chrome Web Store review. Clear justification in the listing description is important.
+5. **Email deliverability**: A shared sender address sending EPUB attachments to Kindle could trigger spam filters if volume grows. Dedicated IP, proper SPF/DKIM/DMARC, and a reputable email provider mitigate this.
+6. **Cost scaling**: Each user adds marginal cost (compute, email, storage). At scale, the transactional email service becomes the largest cost. May need a paid tier if user count grows significantly.
+7. **Substack blocking**: If many users' requests originate from the same server IP, Substack might rate-limit or block it. Mitigate with respectful polling intervals and consider rotating IPs if needed.
