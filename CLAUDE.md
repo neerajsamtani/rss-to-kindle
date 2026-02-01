@@ -111,7 +111,7 @@ Substack wraps images in deeply nested markup (`div.captioned-image-container > 
 
 ## Configuration
 
-All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` and `SUBSTACK_CONNECT_COOKIES` are only needed for paid Substack content — Substack uses `substack.sid` on `.substack.com` and per-domain `connect.sid` cookies on custom newsletter domains. `SUBSTACK_CONNECT_COOKIES` is a JSON dict mapping domains to cookie values (e.g. `{"newsletter.example.com":"s%3A..."}`).
+All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` and `SUBSTACK_CONNECT_COOKIES` are only needed for paid Substack content — Substack uses `substack.sid` on `.substack.com` and per-domain `connect.sid` cookies on custom newsletter domains. Both cookie env vars store JSON with `value` and `expires` fields (e.g. `SUBSTACK_SESSION_COOKIE={"value": "s%3A...", "expires": 1234567890}`, `SUBSTACK_CONNECT_COOKIES={"newsletter.example.com": {"value": "s%3A...", "expires": 1234567890}}`). The CLI warns when cookies are within 7 days of expiring.
 
 ## Code Style Guidelines
 

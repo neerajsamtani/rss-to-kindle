@@ -13,10 +13,15 @@ def load_config() -> dict:
     """Load configuration from .env file and environment variables."""
     load_dotenv()
 
+    session_cookie, session_expires = _parse_session_cookie()
+    connect_cookies, connect_expires = _parse_connect_cookies()
+
     config = {
         "feeds": _parse_feeds(os.getenv("FEEDS", "")),
-        "substack_session_cookie": os.getenv("SUBSTACK_SESSION_COOKIE", ""),
-        "substack_connect_cookies": _parse_connect_cookies(),
+        "substack_session_cookie": session_cookie,
+        "substack_session_cookie_expires": session_expires,
+        "substack_connect_cookies": connect_cookies,
+        "substack_connect_cookies_expires": connect_expires,
         "kindle_email": os.getenv("KINDLE_EMAIL", ""),
         "sender_email": os.getenv("SENDER_EMAIL", ""),
         "sender_password": os.getenv("SENDER_PASSWORD", ""),
@@ -36,25 +41,54 @@ def _parse_feeds(raw: str) -> list[str]:
     return [url.strip() for url in raw.split(",") if url.strip()]
 
 
-def _parse_connect_cookies() -> dict[str, str]:
-    """Parse SUBSTACK_CONNECT_COOKIES JSON env var into a {domain: cookie} dict."""
+def _parse_session_cookie() -> tuple[str, int | None]:
+    """Parse SUBSTACK_SESSION_COOKIE JSON env var into (value, expires) tuple."""
+    raw = os.getenv("SUBSTACK_SESSION_COOKIE", "")
+    if not raw.strip():
+        return "", None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return "", None
+    if isinstance(data, dict) and "value" in data:
+        return data["value"], data.get("expires")
+    return "", None
+
+
+def _parse_connect_cookies() -> tuple[dict[str, str], dict[str, int]]:
+    """Parse SUBSTACK_CONNECT_COOKIES JSON env var.
+
+    Returns (cookies, expires) where cookies maps domain to cookie value and
+    expires maps domain to expiry timestamp.
+    """
     raw = os.getenv("SUBSTACK_CONNECT_COOKIES", "")
     if not raw.strip():
-        return {}
+        return {}, {}
     try:
-        cookies = json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as e:
         print(f"Warning: Failed to parse SUBSTACK_CONNECT_COOKIES: {e}", file=sys.stderr)
-        return {}
-    if isinstance(cookies, dict):
-        return {k: v for k, v in cookies.items() if isinstance(k, str) and isinstance(v, str)}
-    return {}
+        return {}, {}
+    if not isinstance(data, dict):
+        return {}, {}
+    cookies = {}
+    expires = {}
+    for domain, entry in data.items():
+        if not isinstance(domain, str) or not isinstance(entry, dict):
+            continue
+        if "value" in entry:
+            cookies[domain] = entry["value"]
+            if entry.get("expires") is not None:
+                expires[domain] = entry["expires"]
+    return cookies, expires
 
 
 def load_substack_cookies() -> tuple[str, dict[str, str]]:
-    """Load just the Substack cookie config without full validation."""
+    """Load just the Substack cookie values without full validation."""
     load_dotenv()
-    return os.getenv("SUBSTACK_SESSION_COOKIE", ""), _parse_connect_cookies()
+    session_cookie, _ = _parse_session_cookie()
+    connect_cookies, _ = _parse_connect_cookies()
+    return session_cookie, connect_cookies
 
 
 def _validate(config: dict) -> None:
@@ -142,10 +176,13 @@ def remove_feed_from_env(feed_url: str) -> None:
     ENV_PATH.write_text("\n".join(lines) + "\n")
 
 
-def save_cookie_to_env(cookie_value: str) -> None:
-    """Write or update SUBSTACK_SESSION_COOKIE in the .env file."""
+def save_cookie_to_env(cookie_value: str, expires: int | None = None) -> None:
+    """Write or update SUBSTACK_SESSION_COOKIE as JSON in the .env file."""
     key = "SUBSTACK_SESSION_COOKIE"
-    new_line = f"{key}={cookie_value}"
+    data: dict = {"value": cookie_value}
+    if expires is not None:
+        data["expires"] = expires
+    new_line = f"{key}={json.dumps(data)}"
 
     if ENV_PATH.exists():
         lines = ENV_PATH.read_text().splitlines()
@@ -157,17 +194,22 @@ def save_cookie_to_env(cookie_value: str) -> None:
             lines.append(new_line)
         ENV_PATH.write_text("\n".join(lines) + "\n")
     else:
-        # Seed from .env.example if available, otherwise create minimal file
         if ENV_EXAMPLE_PATH.exists():
-            text = ENV_EXAMPLE_PATH.read_text()
-            text = text.replace(f"{key}=s%3A...", new_line)
-            ENV_PATH.write_text(text)
+            lines = ENV_EXAMPLE_PATH.read_text().splitlines()
+            for i, line in enumerate(lines):
+                if line.startswith(f"{key}="):
+                    lines[i] = new_line
+                    break
+            ENV_PATH.write_text("\n".join(lines) + "\n")
         else:
             ENV_PATH.write_text(new_line + "\n")
 
 
-def save_connect_cookies_to_env(cookies: dict[str, str]) -> None:
-    """Write or update SUBSTACK_CONNECT_COOKIES as JSON in the .env file."""
+def save_connect_cookies_to_env(cookies: dict[str, dict]) -> None:
+    """Write or update SUBSTACK_CONNECT_COOKIES as JSON in the .env file.
+
+    Each entry is {domain: {"value": "...", "expires": ...}}.
+    """
     key = "SUBSTACK_CONNECT_COOKIES"
     new_line = f"{key}={json.dumps(cookies)}"
 
