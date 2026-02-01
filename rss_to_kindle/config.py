@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,7 +43,8 @@ def _parse_connect_cookies() -> dict[str, str]:
         return {}
     try:
         cookies = json.loads(raw)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        print(f"Warning: Failed to parse SUBSTACK_CONNECT_COOKIES: {e}", file=sys.stderr)
         return {}
     if isinstance(cookies, dict):
         return {k: v for k, v in cookies.items() if isinstance(k, str) and isinstance(v, str)}
@@ -140,8 +142,9 @@ def remove_feed_from_env(feed_url: str) -> None:
     ENV_PATH.write_text("\n".join(lines) + "\n")
 
 
-def save_cookie_to_env(cookie_value: str, key: str = "SUBSTACK_SESSION_COOKIE") -> None:
-    """Write or update a cookie value in the .env file."""
+def save_cookie_to_env(cookie_value: str) -> None:
+    """Write or update SUBSTACK_SESSION_COOKIE in the .env file."""
+    key = "SUBSTACK_SESSION_COOKIE"
     new_line = f"{key}={cookie_value}"
 
     if ENV_PATH.exists():

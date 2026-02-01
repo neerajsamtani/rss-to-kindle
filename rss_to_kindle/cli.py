@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 import click
+import lxml.html
 from dotenv import load_dotenv
 
 from .config import (
@@ -168,13 +169,17 @@ def _import_substack_cookie(browser: str) -> None:
 
 def _detect_substack(raw_html: str) -> bool:
     """Detect whether HTML was served by Substack (works for custom domains too)."""
+    doc = lxml.html.fromstring(raw_html)
+    gen = doc.find('.//meta[@name="generator"]')
+    if gen is not None and gen.get("content", "").lower() == "substack":
+        return True
     return "substackcdn.com" in raw_html
 
 
-def _check_substack_paywall(raw_html: str, has_cookie: bool) -> bool:
-    """Return True if a Substack paywall is detected, and warn the user."""
+def _check_substack_paywall(raw_html: str, has_cookie: bool) -> None:
+    """Warn the user if a Substack paywall is detected."""
     if 'class="paywall"' not in raw_html:
-        return False
+        return
     if has_cookie:
         click.echo(
             "    Warning: Paywall detected — your Substack session cookie may be expired.\n"
@@ -187,7 +192,6 @@ def _check_substack_paywall(raw_html: str, has_cookie: bool) -> bool:
             "    Run: rss-to-kindle substack-login --from-browser <browser>",
             err=True,
         )
-    return True
 
 
 @main.command("substack-login")
