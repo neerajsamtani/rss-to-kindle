@@ -117,6 +117,18 @@ SUPPORTED_BROWSERS = ["chrome", "firefox", "opera", "edge", "chromium"]
 COOKIE_EXPIRY_WARNING_DAYS = 7
 
 
+def _format_expiry(expires: int | None) -> str:
+    """Format a cookie expiry timestamp as a human-readable string."""
+    if expires is None:
+        return "unknown expiry"
+    expiry = datetime.fromtimestamp(expires, tz=UTC)
+    days_left = (expiry.date() - datetime.now(UTC).date()).days
+    date_str = expiry.strftime("%b %d, %Y")
+    if days_left < 0:
+        return f"expired on {date_str}"
+    return f"expires {date_str} ({days_left} day{'s' if days_left != 1 else ''} left)"
+
+
 def _load_connect_cookies_raw() -> dict[str, dict]:
     """Load the raw SUBSTACK_CONNECT_COOKIES JSON (with expiry metadata intact)."""
     import json
@@ -138,12 +150,11 @@ def _warn_cookie_expiry(
     connect_cookies: dict[str, dict] | None = None,
 ) -> None:
     """Warn the user if any Substack cookies are expired or expiring soon."""
-    now = datetime.now(UTC)
+    today = datetime.now(UTC).date()
     warnings: list[str] = []
 
     if session_expires is not None:
-        expiry = datetime.fromtimestamp(session_expires, tz=UTC)
-        days_left = (expiry - now).days
+        days_left = (datetime.fromtimestamp(session_expires, tz=UTC).date() - today).days
         if days_left < 0:
             warnings.append("substack.sid cookie has expired.")
         elif days_left < COOKIE_EXPIRY_WARNING_DAYS:
@@ -153,8 +164,7 @@ def _warn_cookie_expiry(
         expires = entry.get("expires") if isinstance(entry, dict) else None
         if expires is None:
             continue
-        expiry = datetime.fromtimestamp(expires, tz=UTC)
-        days_left = (expiry - now).days
+        days_left = (datetime.fromtimestamp(expires, tz=UTC).date() - today).days
         if days_left < 0:
             warnings.append(f"connect.sid cookie for {domain} has expired.")
         elif days_left < COOKIE_EXPIRY_WARNING_DAYS:
@@ -188,6 +198,12 @@ def _import_substack_cookie(browser: str) -> None:
 
     # Single loader call to avoid repeated keychain/password prompts on macOS
     try:
+        click.echo(
+            "Make sure you're logged into substack.com in your browser."
+            "\nNote: you may see a pop-up asking you to authenticate"
+            " so we can read your login state.",
+            err=True,
+        )
         jar = loader()
     except Exception as e:
         raise click.ClickException(
@@ -216,18 +232,19 @@ def _import_substack_cookie(browser: str) -> None:
             "Log into substack.com in that browser first, then re-run this command."
         )
 
-    found_parts = []
     if session_cookie:
         save_cookie_to_env(session_cookie, session_expires)
-        found_parts.append("SUBSTACK_SESSION_COOKIE")
     if connect_cookies:
         # Merge with any existing connect cookies (raw JSON format)
-        _, existing = load_substack_cookies()
         existing_raw = _load_connect_cookies_raw()
         existing_raw.update(connect_cookies)
         save_connect_cookies_to_env(existing_raw)
-        found_parts.append(f"SUBSTACK_CONNECT_COOKIES ({len(existing_raw)} domain(s))")
-    click.echo(f"Found Substack login from {browser} ({', '.join(found_parts)}).")
+
+    click.echo(f"Found Substack login from {browser}:")
+    if session_cookie:
+        click.echo(f"  substack.com — {_format_expiry(session_expires)}")
+    for domain, entry in connect_cookies.items():
+        click.echo(f"  {domain} — {_format_expiry(entry.get('expires'))}")
     _warn_cookie_expiry(session_expires, connect_cookies)
 
 
