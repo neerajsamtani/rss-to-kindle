@@ -22,7 +22,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.rss-to-kindle/sent.json
-          key: sent-state
+          # actions/cache caches are immutable, so a static key would never update.
+          # A unique key per run ensures the post-job save always writes a new entry,
+          # and restore-keys falls back to the most recent previous cache.
+          key: sent-state-${{ github.run_id }}
+          restore-keys: sent-state-
 
       - name: Fetch and send articles
         env:
