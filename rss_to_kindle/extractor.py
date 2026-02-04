@@ -1,11 +1,17 @@
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import httpx
 import lxml.html
 from readability import Document
+
+# Readability penalizes <ul>/<ol> tags (-3 base score) and strips lists whose content
+# is too short to overcome that penalty. Boosting these tags via positive_keywords
+# prevents legitimate article lists from being dropped during sanitization.
+_LIST_PRESERVE = re.compile(r"^tag-(?:ul|ol)$")
 
 
 @dataclass
@@ -192,7 +198,7 @@ def extract_article(
         raw_html = _simplify_headers(raw_html)
         raw_html = _simplify_images(raw_html)
 
-    doc = Document(raw_html)
+    doc = Document(raw_html, positive_keywords=_LIST_PRESERVE)
     title = meta["og_title"] or doc.title()
     if author == "Unknown" and meta["author"]:
         author = meta["author"]
