@@ -159,6 +159,20 @@ def build_epub(article: Article) -> bytes:
     return buf.getvalue()
 
 
+def _send_email(
+    msg: EmailMessage,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int,
+) -> None:
+    """Connect to SMTP, authenticate, and send a message."""
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+
+
 def send_to_kindle(
     article: Article,
     kindle_email: str,
@@ -186,10 +200,7 @@ def send_to_kindle(
         filename=filename,
     )
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
+    _send_email(msg, sender_email, sender_password, smtp_host, smtp_port)
 
 
 def send_expiry_notification(
@@ -221,7 +232,4 @@ def send_expiry_notification(
         "  4. Trigger a manual run of the fetch workflow to confirm it works."
     )
     msg.set_content(body)
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
+    _send_email(msg, sender_email, sender_password, smtp_host, smtp_port)
