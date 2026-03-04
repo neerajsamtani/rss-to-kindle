@@ -159,6 +159,20 @@ def build_epub(article: Article) -> bytes:
     return buf.getvalue()
 
 
+def _send_email(
+    msg: EmailMessage,
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str,
+    smtp_port: int,
+) -> None:
+    """Connect to SMTP, authenticate, and send a message."""
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+
+
 def send_to_kindle(
     article: Article,
     kindle_email: str,
@@ -186,7 +200,36 @@ def send_to_kindle(
         filename=filename,
     )
 
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
+    _send_email(msg, sender_email, sender_password, smtp_host, smtp_port)
+
+
+def send_expiry_notification(
+    warnings: list[str],
+    sender_email: str,
+    sender_password: str,
+    smtp_host: str = "smtp.gmail.com",
+    smtp_port: int = 587,
+) -> None:
+    """Send a notification email to the sender when cookies are expired or expiring soon."""
+    msg = EmailMessage()
+    msg["Subject"] = "Action required: rss-to-kindle authentication expiring"
+    msg["From"] = sender_email
+    msg["To"] = sender_email
+    warning_lines = "\n".join(f"  - {w}" for w in warnings)
+    body = (
+        "Your rss-to-kindle service uses Substack session cookies to access paid newsletter "
+        "content. One or more of these cookies has expired or is about to expire, which means "
+        "paywalled articles will no longer be fetched and sent to your Kindle.\n\n"
+        f"Affected cookies:\n{warning_lines}\n\n"
+        "To fix this, run the following command on your local machine "
+        "(you must be logged into Substack in the browser you specify):\n\n"
+        "  rss-to-kindle substack-login --from-browser <browser>\n\n"
+        "If you're running rss-to-kindle via GitHub Actions:\n"
+        "  1. Run the command above locally to extract updated cookies from your browser.\n"
+        "  2. Copy the new cookie values printed by the command.\n"
+        "  3. Update the SUBSTACK_SESSION_COOKIE (and/or SUBSTACK_CONNECT_COOKIES) secrets\n"
+        "     in your GitHub repository: Settings → Secrets and variables → Actions.\n"
+        "  4. Trigger a manual run of the fetch workflow to confirm it works."
+    )
+    msg.set_content(body)
+    _send_email(msg, sender_email, sender_password, smtp_host, smtp_port)
