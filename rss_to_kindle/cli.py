@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from datetime import UTC, datetime
@@ -20,7 +21,7 @@ from .config import (
 from .extractor import extract_article
 from .feed import fetch_feed, filter_recent
 from .fetcher import fetch_article_html
-from .kindle import build_epub, send_to_kindle
+from .kindle import build_epub, send_expiry_notification, send_to_kindle
 from .state import get_history, is_sent, mark_sent
 
 
@@ -29,6 +30,7 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
     _warn_cookie_expiry(
         config.get("substack_session_cookie_expires"),
         _load_connect_cookies_raw(),
+        config,  # contains sender_email, sender_password, smtp_host, smtp_port
     )
     sent_count = 0
 
@@ -114,7 +116,7 @@ def main():
 
 SUPPORTED_BROWSERS = ["chrome", "firefox", "opera", "edge", "chromium"]
 
-COOKIE_EXPIRY_WARNING_DAYS = 7
+COOKIE_EXPIRY_WARNING_DAYS = 14
 
 
 def _format_expiry(expires: int | None) -> str:
@@ -148,8 +150,13 @@ def _load_connect_cookies_raw() -> dict[str, dict]:
 def _warn_cookie_expiry(
     session_expires: int | None = None,
     connect_cookies: dict[str, dict] | None = None,
+    smtp_settings: dict | None = None,
 ) -> None:
-    """Warn the user if any Substack cookies are expired or expiring soon."""
+    """Warn the user if any Substack cookies are expired or expiring soon.
+
+    If smtp_settings is provided (sender_email, sender_password, smtp_host, smtp_port),
+    an email notification is also sent (rate-limited to once per 24 hours).
+    """
     today = datetime.now(UTC).date()
     warnings: list[str] = []
 
@@ -175,6 +182,33 @@ def _warn_cookie_expiry(
             f"Warning: {warning}\n  Run: rss-to-kindle substack-login --from-browser <browser>",
             err=True,
         )
+
+    if not warnings or not smtp_settings:
+        return
+
+    # Rate-limit email notifications to once per 24 hours to avoid inbox spam during poll mode
+    notification_file = Path.home() / ".rss-to-kindle" / "auth_expiry_notification.json"
+    if notification_file.exists():
+        try:
+            data = json.loads(notification_file.read_text())
+            last_sent = datetime.fromisoformat(data["sent_at"])
+            if (datetime.now(UTC) - last_sent).total_seconds() < 86400:
+                return
+        except Exception:
+            pass
+
+    try:
+        send_expiry_notification(
+            warnings,
+            smtp_settings["sender_email"],
+            smtp_settings["sender_password"],
+            smtp_settings["smtp_host"],
+            smtp_settings["smtp_port"],
+        )
+        notification_file.parent.mkdir(parents=True, exist_ok=True)
+        notification_file.write_text(json.dumps({"sent_at": datetime.now(UTC).isoformat()}))
+    except Exception as e:
+        click.echo(f"Warning: Failed to send expiry notification email: {e}", err=True)
 
 
 def _import_substack_cookie(browser: str) -> None:
@@ -245,6 +279,9 @@ def _import_substack_cookie(browser: str) -> None:
         click.echo(f"  substack.com — {_format_expiry(session_expires)}")
     for domain, entry in connect_cookies.items():
         click.echo(f"  {domain} — {_format_expiry(entry.get('expires'))}")
+    # Don't pass smtp_settings here: the user just authenticated, so there's nothing
+    # to notify them about — we only show the CLI warning if the imported cookies are
+    # somehow already close to expiry.
     _warn_cookie_expiry(session_expires, connect_cookies)
 
 
