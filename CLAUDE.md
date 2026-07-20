@@ -19,6 +19,7 @@ uv run rss-to-kindle fetch --days 7     # Only process articles from the last 7 
 uv run rss-to-kindle poll               # Continuous: run fetch every POLL_INTERVAL_MINUTES
 uv run rss-to-kindle init                # Interactive first-run setup (Kindle email + optional Substack login)
 uv run rss-to-kindle substack-login --from-browser chrome
+uv run rss-to-kindle substack-login --from-browser chrome --print  # also print values for GitHub secrets
 uv run rss-to-kindle list               # Show configured feed URLs
 uv run rss-to-kindle add <url>          # Add a feed URL to .env
 uv run rss-to-kindle remove <url>       # Remove a feed URL from .env
@@ -111,7 +112,7 @@ Substack wraps images in deeply nested markup (`div.captioned-image-container > 
 
 ## Configuration
 
-All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` and `SUBSTACK_CONNECT_COOKIES` are only needed for paid Substack content — Substack uses `substack.sid` on `.substack.com` and per-domain `connect.sid` cookies on custom newsletter domains. Both cookie env vars store JSON with `value` and `expires` fields (e.g. `SUBSTACK_SESSION_COOKIE={"value": "s%3A...", "expires": 1234567890}`, `SUBSTACK_CONNECT_COOKIES={"newsletter.example.com": {"value": "s%3A...", "expires": 1234567890}}`). The CLI warns when cookies are within 7 days of expiring.
+All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` and `SUBSTACK_CONNECT_COOKIES` are only needed for paid Substack content — Substack uses `substack.sid` on `.substack.com` and per-domain `connect.sid` cookies on custom newsletter domains. Both cookie env vars store JSON with `value` and `expires` fields (e.g. `SUBSTACK_SESSION_COOKIE={"value": "s%3A...", "expires": 1234567890}`, `SUBSTACK_CONNECT_COOKIES={"newsletter.example.com": {"value": "s%3A...", "expires": 1234567890}}`). The CLI warns when cookies are within 14 days of expiring, and emails the sender address (at most once per 24h) when they are expiring or expired.
 
 ## Code Style Guidelines
 

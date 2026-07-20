@@ -9,6 +9,7 @@ import lxml.html
 from dotenv import load_dotenv
 
 from .config import (
+    ENV_PATH,
     add_feed_to_env,
     load_config,
     load_feeds,
@@ -213,7 +214,22 @@ def _email_cookie_expiry(
         click.echo(f"Warning: Failed to send expiry notification email: {e}", err=True)
 
 
-def _import_substack_cookie(browser: str) -> None:
+def _echo_cookie_secrets() -> None:
+    """Print the saved cookie values for pasting into GitHub Actions secrets.
+
+    Read back from .env rather than re-serializing so the printed value is always
+    byte-identical to what the workflow will read.
+    """
+    lines = ENV_PATH.read_text().splitlines() if ENV_PATH.exists() else []
+    click.echo("\nPaste these into Settings → Secrets and variables → Actions:")
+    for key in ("SUBSTACK_SESSION_COOKIE", "SUBSTACK_CONNECT_COOKIES"):
+        for line in lines:
+            if line.startswith(f"{key}="):
+                click.echo(f"\n{key}")
+                click.echo(line.split("=", 1)[1])
+
+
+def _import_substack_cookie(browser: str, print_secrets: bool = False) -> None:
     """Import Substack session cookies from the given browser and save them to .env.
 
     Substack uses two session cookies: substack.sid on .substack.com and connect.sid
@@ -282,6 +298,8 @@ def _import_substack_cookie(browser: str) -> None:
     for domain, entry in connect_cookies.items():
         click.echo(f"  {domain} — {_format_expiry(entry.get('expires'))}")
     _warn_cookie_expiry(session_expires, connect_cookies)
+    if print_secrets:
+        _echo_cookie_secrets()
 
 
 def _detect_substack(raw_html: str) -> bool:
@@ -318,9 +336,15 @@ def _check_substack_paywall(raw_html: str, has_cookie: bool) -> None:
     type=click.Choice(SUPPORTED_BROWSERS),
     help="Browser to read the Substack session cookie from.",
 )
-def substack_login(from_browser):
+@click.option(
+    "--print",
+    "print_secrets",
+    is_flag=True,
+    help="Also print the cookie values for pasting into GitHub Actions secrets.",
+)
+def substack_login(from_browser, print_secrets):
     """Import your Substack session cookie from a browser."""
-    _import_substack_cookie(from_browser)
+    _import_substack_cookie(from_browser, print_secrets)
 
 
 @main.command()
