@@ -1,17 +1,12 @@
 import hashlib
 import json
-import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import httpx
 import lxml.html
 from readability import Document
-
-# Readability penalizes <ul>/<ol> tags (-3 base score) and strips lists whose content
-# is too short to overcome that penalty. Boosting these tags via positive_keywords
-# prevents legitimate article lists from being dropped during sanitization.
-_LIST_PRESERVE = re.compile(r"^tag-(?:ul|ol)$")
+from readability.cleaners import html_cleaner
 
 
 @dataclass
@@ -46,22 +41,61 @@ def _extract_meta(raw_html: str) -> dict[str, str | None]:
 
 
 def _simplify_headers(raw_html: str) -> str:
-    """Strip Substack's anchor widgets from headings so readability preserves them.
-
-    Substack injects a div.header-anchor-parent with nested button/svg inside each
-    heading for the anchor-link icon. The class "header-anchor-post" on the heading
-    itself triggers readability's unlikely-candidate filter (matches "header").
-    We remove the widget div and strip heading classes to prevent both issues.
-    """
+    """Remove heading permalink widgets before readability strips their sizing."""
     doc = lxml.html.fromstring(raw_html)
 
     for tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
         for heading in doc.iter(tag):
             for widget in heading.find_class("header-anchor-parent"):
-                heading.remove(widget)
+                widget.drop_tree()
+            for anchor in heading.iter("a"):
+                classes = anchor.get("class", "").split()
+                if "heading-anchor" in classes or (
+                    anchor.get("href", "").startswith("#")
+                    and not anchor.text_content().strip()
+                    and anchor.xpath(".//svg | .//img")
+                ):
+                    anchor.drop_tree()
             if "class" in heading.attrib:
                 del heading.attrib["class"]
 
+    return lxml.html.tostring(doc, encoding="unicode")
+
+
+def _extract_content(raw_html: str) -> str:
+    """Let readability select the article without destroying lists or footnotes."""
+    doc = html_cleaner.clean_html(lxml.html.fromstring(raw_html))
+    preserved = {}
+    selected = set()
+    for element in list(doc.iter("*")):
+        classes = element.get("class", "").split()
+        is_note = any(c.startswith("footnote") for c in classes) or element.get("role") in (
+            "doc-endnotes",
+            "doc-endnote",
+            "doc-noteref",
+            "doc-backlink",
+        )
+        if element.tag not in ("ul", "ol") and not is_note:
+            continue
+        if element.getparent() is None or any(a in selected for a in element.iterancestors()):
+            continue
+        selected.add(element)
+        # Text-only placeholders survive link-density and "foot" class filters.
+        # Restore only those within the article that readability actually selected.
+        placeholder = lxml.html.Element("span" if element.tag in ("a", "sup") else "p")
+        key = str(len(preserved))
+        placeholder.set("data-kindle-preserved", key)
+        placeholder.text = element.text_content()
+        placeholder.tail = element.tail
+        element.getparent().replace(element, placeholder)
+        preserved[key] = element
+
+    content = Document(lxml.html.tostring(doc, encoding="unicode")).summary()
+    doc = lxml.html.fromstring(content)
+    for placeholder in doc.xpath("//*[@data-kindle-preserved]"):
+        element = preserved[placeholder.get("data-kindle-preserved")]
+        element.tail = placeholder.tail
+        placeholder.getparent().replace(placeholder, element)
     return lxml.html.tostring(doc, encoding="unicode")
 
 
@@ -194,15 +228,21 @@ def extract_article(
 ) -> Article:
     """Extract clean article content from raw HTML using readability."""
     meta = _extract_meta(raw_html)
+    raw_html = _simplify_headers(raw_html)
     if is_substack:
-        raw_html = _simplify_headers(raw_html)
         raw_html = _simplify_images(raw_html)
 
-    doc = Document(raw_html, positive_keywords=_LIST_PRESERVE)
-    title = meta["og_title"] or doc.title()
+    title = meta["og_title"] or Document(raw_html).title()
     if author == "Unknown" and meta["author"]:
         author = meta["author"]
-    content = doc.summary()
+    content = _extract_content(raw_html)
+    if url:
+        doc = lxml.html.fromstring(content)
+        for anchor in doc.iter("a"):
+            href = anchor.get("href", "")
+            if href and not href.startswith("#"):
+                anchor.set("href", urljoin(url, href))
+        content = lxml.html.tostring(doc, encoding="unicode")
 
     content, images = _download_images(
         content, session_cookie, base_url=url, connect_cookies=connect_cookies

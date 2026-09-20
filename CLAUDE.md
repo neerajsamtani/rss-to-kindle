@@ -29,20 +29,11 @@ uv run rss-to-kindle preview <url>      # Generate EPUB locally without sending 
 
 ### Testing
 
-No test framework is currently configured. Add pytest to pyproject.toml when needed:
+Regression tests use Python's standard-library unittest runner:
 
 ```bash
-# Add pytest to dependencies, then:
-uv sync
-
 # Run all tests
-uv run pytest
-
-# Run a single test file
-uv run pytest tests/test_feed.py -v
-
-# Run a single test
-uv run pytest tests/test_feed.py::test_fetch_feed -v
+uv run python -m unittest discover -s tests -v
 ```
 
 ### Linting & Formatting
