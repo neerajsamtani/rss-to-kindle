@@ -19,7 +19,9 @@ From the Mac, transfer the existing private settings file as a runtime-only file
 Git and must stay mode `600`; do not print it in a terminal or paste its contents into chat:
 
 ```sh
-rsync -av --no-perms --chmod=F600 .env neerajsamtani@raspberrypi:~/rss-to-kindle/.env.runtime
+chmod 600 .env
+rsync -av .env neerajsamtani@raspberrypi:~/rss-to-kindle/.env.runtime
+ssh neerajsamtani@raspberrypi 'chmod 600 "$HOME/rss-to-kindle/.env.runtime"'
 ```
 
 On the Pi, verify the secret file and data filesystem, then build and start the initial tested
@@ -125,8 +127,9 @@ recreate the container so it reads the refreshed cookie. Do not print or copy th
 logs:
 
 ```sh
-rsync -av --no-perms --chmod=F600 .env neerajsamtani@raspberrypi:~/rss-to-kindle/.env.runtime
-ssh neerajsamtani@raspberrypi 'cd ~/rss-to-kindle && chmod 600 .env.runtime && docker compose up -d --force-recreate web'
+chmod 600 .env
+rsync -av .env neerajsamtani@raspberrypi:~/rss-to-kindle/.env.runtime
+ssh neerajsamtani@raspberrypi 'chmod 600 "$HOME/rss-to-kindle/.env.runtime" && cd "$HOME/rss-to-kindle" && docker compose up -d --force-recreate web'
 ```
 
 Compose honors the 240-second stop grace period while the app stops claiming jobs and drains its

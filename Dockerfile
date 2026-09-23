@@ -12,6 +12,7 @@ RUN groupadd --gid 1000 app \
 
 COPY pyproject.toml README.md ./
 COPY rss_to_kindle ./rss_to_kindle
+COPY scripts ./scripts
 COPY tests ./tests
 
 RUN python -m pip install --no-cache-dir .
