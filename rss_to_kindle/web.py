@@ -73,7 +73,12 @@ def create_app(
 ) -> Flask:
     """Create the WSGI app, persistent job store, and optional single worker."""
     load_dotenv()
-    app = Flask(__name__, static_folder="web_static", template_folder="web_templates")
+    app = Flask(
+        __name__,
+        static_folder="web_static",
+        static_url_path="/static",
+        template_folder="web_templates",
+    )
     app.config["MAX_CONTENT_LENGTH"] = 8192
     app.config["WEB_BASE_PATH"] = _base_path(
         base_path if base_path is not None else os.getenv("WEB_BASE_PATH", "/rss-to-kindle")

@@ -107,6 +107,22 @@ class WebServiceTests(unittest.TestCase):
             {"database": "ok", "ok": True, "status": "ok", "worker": "running"},
         )
 
+    def test_static_assets_use_the_template_url_and_are_served(self):
+        page = self.client.get("/", headers=self.owner_headers())
+        html = page.get_data(as_text=True)
+        self.assertIn("/rss-to-kindle/static/style.css", html)
+        self.assertIn("/rss-to-kindle/static/app.js", html)
+        page.close()
+
+        script = self.client.get("/static/app.js")
+        stylesheet = self.client.get("/static/style.css")
+        self.assertEqual(script.status_code, 200)
+        self.assertEqual(stylesheet.status_code, 200)
+        self.assertIn("loadRecent()", script.get_data(as_text=True))
+        self.assertIn(":root", stylesheet.get_data(as_text=True))
+        script.close()
+        stylesheet.close()
+
     def test_url_prefill_does_not_create_a_job(self):
         response = self.client.get(
             "/?url=https%3A%2F%2Fexample.com%2Farticle%3Fedition%3Dmorning",
@@ -230,6 +246,7 @@ class WebServiceTests(unittest.TestCase):
             self.assertEqual(result["status"], "interrupted")
             self.assertEqual(result["error"], DELIVERY_STATUS_UNSAVED)
             self.assertNotEqual(result["status"], "failed")
+            worker.shutdown()
 
     def test_sigterm_drains_active_job_and_leaves_queued_work_for_restart(self):
         root = Path(__file__).resolve().parents[1]
