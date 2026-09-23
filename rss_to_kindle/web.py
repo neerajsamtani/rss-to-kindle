@@ -146,11 +146,10 @@ def create_app(
         if job is None:
             return jsonify(error="Job not found."), 404
         return render_template(
-            "index.html",
+            "job.html",
             base_path=app.config["WEB_BASE_PATH"],
-            prefill="",
-            jobs=[_public_job(record, app.config["WEB_BASE_PATH"]) for record in store.recent(20)],
-            current_job=_public_job(job, app.config["WEB_BASE_PATH"]),
+            job=_public_job(job, app.config["WEB_BASE_PATH"]),
+            status_message=_status_message(job),
         )
 
     @app.get("/api/health")
@@ -253,3 +252,17 @@ def _public_job(job: dict, base_path: str = "") -> dict:
         "status_url": f"{base_path}/jobs/{job_id}",
         "api_url": f"{base_path}/api/jobs/{job_id}",
     }
+
+
+def _status_message(job: dict) -> str:
+    if job["error"]:
+        return job["error"]
+    return {
+        "queued": "Waiting for the article worker.",
+        "fetching": "Opening the article page.",
+        "extracting": "Preparing the article as an EPUB.",
+        "sending": "Sending the EPUB to your Kindle email.",
+        "sent": "Email accepted by your email provider. Kindle delivery can take a little while.",
+        "failed": "The article could not be sent.",
+        "interrupted": "Delivery could not be confirmed. Check your Kindle before sending again.",
+    }.get(job["status"], "Status unavailable.")

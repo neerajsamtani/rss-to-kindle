@@ -161,7 +161,23 @@ class WebServiceTests(unittest.TestCase):
 
         page = self.client.get(f"/jobs/{first_job['id']}", headers=self.owner_headers())
         self.assertEqual(page.status_code, 200)
-        self.assertIn("A readable article", page.get_data(as_text=True))
+        detail = page.get_data(as_text=True)
+        self.assertIn('id="job-title">A readable article</h2>', detail)
+        self.assertIn("https://example.com/article", detail)
+        self.assertIn("<dt>Created</dt>", detail)
+        self.assertIn("<dt>Last updated</dt>", detail)
+        self.assertIn('href="/rss-to-kindle/"', detail)
+        self.assertNotIn('id="submit-form"', detail)
+
+        self.store.update(first_job["id"], "sending")
+        active_page = self.client.get(f"/jobs/{first_job['id']}", headers=self.owner_headers())
+        self.assertIn('http-equiv="refresh" content="5"', active_page.get_data(as_text=True))
+
+        self.store.update(first_job["id"], "failed", error="The article needs a login.")
+        failed_page = self.client.get(f"/jobs/{first_job['id']}", headers=self.owner_headers())
+        failed_detail = failed_page.get_data(as_text=True)
+        self.assertIn("The article needs a login.", failed_detail)
+        self.assertNotIn('http-equiv="refresh"', failed_detail)
 
     def test_bad_url_and_bad_idempotency_key_are_rejected_before_enqueue(self):
         invalid_url = self.submit("file:///etc/passwd")

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f2ed">
+    <title>Request status · Send to Kindle</title>
+    {% if job.status in ["queued", "fetching", "extracting", "sending"] %}
+    <meta http-equiv="refresh" content="5">
+    {% endif %}
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-mark" aria-hidden="true">rk</div>
+      <div>
+        <p class="eyebrow">RSS to Kindle</p>
+        <h1>Request status</h1>
+      </div>
+    </header>
+
+    <main class="detail-page">
+      <a class="back-link" href="{{ base_path }}/">← Back to requests</a>
+      <article class="job-detail" aria-labelledby="job-title">
+        <p class="eyebrow">Article request</p>
+        <div class="detail-heading">
+          <h2 id="job-title">{{ job.title or job.url }}</h2>
+          <span class="status-pill status-{{ job.status }}">{{ job.status }}</span>
+        </div>
+        <p class="detail-message">{{ status_message }}</p>
+
+        <dl class="detail-fields">
+          <div>
+            <dt>Article URL</dt>
+            <dd class="detail-url">{{ job.url }}</dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd><time datetime="{{ job.created_at }}">{{ job.created_at }}</time></dd>
+          </div>
+          <div>
+            <dt>Last updated</dt>
+            <dd><time datetime="{{ job.updated_at }}">{{ job.updated_at }}</time></dd>
+          </div>
+          {% if job.error %}
+          <div>
+            <dt>Details</dt>
+            <dd class="detail-error">{{ job.error }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+      </article>
+    </main>
+
+    <footer>
+      <p>“Sent” means your email provider accepted the EPUB. Kindle delivery can take a little while.</p>
+    </footer>
+  </body>
+</html>

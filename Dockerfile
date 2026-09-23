@@ -16,7 +16,7 @@ COPY scripts ./scripts
 COPY tests ./tests
 
 RUN python -m pip install --no-cache-dir .
-RUN cd / && python -c "from importlib.resources import files; package = files('rss_to_kindle'); required = ('web_templates/index.html', 'web_static/app.js', 'web_static/style.css'); missing = [path for path in required if not (package / path).is_file()]; assert not missing, f'wheel is missing web assets: {missing}'"
+RUN cd / && python -c "from importlib.resources import files; package = files('rss_to_kindle'); required = ('web_templates/index.html', 'web_templates/job.html', 'web_static/app.js', 'web_static/style.css'); missing = [path for path in required if not (package / path).is_file()]; assert not missing, f'wheel is missing web assets: {missing}'"
 
 ARG RUN_TESTS=0
 RUN if [ "$RUN_TESTS" = "1" ]; then \

@@ -249,6 +249,7 @@ button:disabled {
 }
 
 .current-row h3 {
+  min-width: 0;
   overflow: hidden;
   margin: 0;
   font-size: 14px;
@@ -280,7 +281,9 @@ button:disabled {
 
 .job-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -291,6 +294,7 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  min-width: 0;
   padding: 15px 17px;
 }
 
@@ -374,6 +378,100 @@ button:disabled {
   padding: 15px 3px;
 }
 
+.detail-page {
+  padding-top: 20px;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.job-detail {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--card);
+  box-shadow: 0 8px 25px rgb(42 49 43 / 4%);
+}
+
+.detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.detail-heading h2 {
+  min-width: 0;
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(23px, 4vw, 32px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.detail-heading .status-pill {
+  flex: 0 0 auto;
+}
+
+.detail-message {
+  margin: 12px 0 22px;
+  color: var(--muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.detail-fields {
+  display: grid;
+  gap: 15px;
+  margin: 0;
+}
+
+.detail-fields > div {
+  min-width: 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.detail-fields dt {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.detail-fields dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.detail-url {
+  color: var(--green);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px !important;
+}
+
+.detail-error {
+  color: var(--red);
+}
+
 footer {
   max-width: 920px;
   margin: 0 auto;
@@ -412,12 +510,81 @@ footer {
   }
 
   .job-card {
-    align-items: flex-start;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 9px;
+    width: 100%;
     padding: 13px;
   }
 
+  .job-main {
+    width: 100%;
+  }
+
+  .job-card h3,
+  .job-note {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .job-side {
-    align-items: flex-end;
+    align-items: center;
+    flex: 1 1 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    width: 100%;
+    gap: 8px 12px;
+  }
+
+  .job-side .status-pill {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .job-side a {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .current-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .current-row h3 {
+    flex: 1 1 100%;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .current-note {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .detail-page {
+    padding-top: 14px;
+  }
+
+  .job-detail {
+    padding: 18px;
+  }
+
+  .detail-heading {
+    flex-wrap: wrap;
+  }
+
+  .detail-heading .status-pill {
+    flex: 0 1 auto;
+    white-space: normal;
   }
 
   footer {
