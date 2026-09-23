@@ -95,3 +95,9 @@ The included workflow (`.github/workflows/fetch.yml`) runs `fetch` every 6 hours
 | `SUBSTACK_CONNECT_COOKIES` | *(optional)* JSON cookie value from `.env` |
 
 4. The workflow runs automatically on schedule. You can also trigger it manually from the **Actions** tab via "Run workflow".
+
+## Raspberry Pi web app
+
+The Raspberry Pi deployment provides a private Tailscale web form for queueing an article URL
+and sending it to Kindle. Setup, automatic deployment, backups, Substack cookie refresh, and the
+iPhone Share Sheet shortcut are documented in [deploy/pi/README.md](deploy/pi/README.md).

@@ -1,6 +1,7 @@
 import mimetypes
 import smtplib
 from email.message import EmailMessage
+from html import escape
 from io import BytesIO
 from textwrap import wrap
 
@@ -8,17 +9,17 @@ from ebooklib import epub
 from PIL import Image, ImageDraw, ImageFont
 
 from .extractor import Article
+from .fetcher import MAX_IMAGE_BYTES, PublicFetchError, UnsafeURL, safe_http_get
 
 
 def _download_cover_image(url: str) -> bytes | None:
     """Fetch the og:image, return raw bytes or None on failure."""
-    import httpx
-
     try:
-        resp = httpx.get(url, follow_redirects=True, timeout=15)
-        resp.raise_for_status()
-        return resp.content
-    except Exception:
+        response = safe_http_get(url, max_bytes=MAX_IMAGE_BYTES)
+        if response.status_code >= 400:
+            return None
+        return response.content
+    except (PublicFetchError, UnsafeURL):
         return None
 
 
@@ -143,8 +144,8 @@ def build_epub(article: Article) -> bytes:
     chapter = epub.EpubHtml(title=article.title, file_name="article.xhtml", lang="en")
     chapter.add_item(style)
     chapter.content = (
-        f"<h1>{article.title}</h1>"
-        f"<p><em>By {article.author} · {article.published}</em></p>"
+        f"<h1>{escape(article.title)}</h1>"
+        f"<p><em>By {escape(article.author)} · {escape(article.published)}</em></p>"
         f"{article.html_content}"
     )
     book.add_item(chapter)

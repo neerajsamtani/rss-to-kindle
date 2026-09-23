@@ -7,7 +7,10 @@ dependencies = [
     "click>=8.3.1",
     "ebooklib>=0.18",
     "feedparser>=6.0.12",
-    "httpx>=0.28.1",
+    "flask>=3.1.0",
+    "gunicorn>=23.0.0",
+    "httpcore>=1.0,<1.1",
+    "httpx>=0.28.1,<0.29",
     "lxml>=6.0.2",
     "Pillow>=11.0.0",
     "python-dotenv>=1.2.1",
@@ -21,6 +24,9 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 rss-to-kindle = "rss_to_kindle.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rss_to_kindle"]
 
 [dependency-groups]
 dev = [

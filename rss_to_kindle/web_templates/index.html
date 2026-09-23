@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f2ed">
+    <title>Send to Kindle</title>
+    <link rel="stylesheet" href="{{ base_path }}/static/style.css">
+    <script defer src="{{ base_path }}/static/app.js"></script>
+  </head>
+  <body data-base-path="{{ base_path }}">
+    <header class="site-header">
+      <div class="header-mark" aria-hidden="true">rk</div>
+      <div>
+        <p class="eyebrow">RSS to Kindle</p>
+        <h1>Send an article</h1>
+      </div>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="intro-title">
+        <p class="eyebrow">A quiet read, wherever you are</p>
+        <h2 id="intro-title">One link. One EPUB. Your Kindle.</h2>
+        <p>Paste an article URL to prepare it and email it to your Kindle address.</p>
+      </section>
+
+      <section class="submit-card" aria-labelledby="form-title">
+        <h2 id="form-title">Article URL</h2>
+        <form id="submit-form">
+          <label for="article-url">Web address</label>
+          <div class="input-row">
+            <input
+              id="article-url"
+              name="url"
+              type="url"
+              inputmode="url"
+              placeholder="https://example.com/article"
+              value="{{ prefill }}"
+              autocomplete="url"
+              required
+              maxlength="4096"
+            >
+            <button id="submit-button" type="submit">Send to Kindle <span aria-hidden="true">→</span></button>
+          </div>
+          <p class="form-hint">The page is fetched when you press send. A link in this form has not been sent yet.</p>
+        </form>
+        <div id="submit-feedback" class="feedback" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="latest-section" aria-labelledby="latest-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Live progress</p>
+            <h2 id="latest-heading">Current request</h2>
+          </div>
+        </div>
+        {% if current_job %}
+        <div id="current-job" class="current-job" data-job-id="{{ current_job.id }}" aria-live="polite">
+          <div class="current-row">
+            <h3>{{ current_job.title or current_job.url }}</h3>
+            <span class="status-pill status-{{ current_job.status }}">{{ current_job.status }}</span>
+          </div>
+          <p class="job-note current-note">{{ current_job.error or current_job.status }}</p>
+          <a href="{{ current_job.status_url }}">Status details <span aria-hidden="true">↗</span></a>
+        </div>
+        {% else %}
+        <div id="current-job" class="current-job empty-state" aria-live="polite">
+          Your current request will appear here.
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="history-section" aria-labelledby="history-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Your activity</p>
+            <h2 id="history-heading">Recent requests</h2>
+          </div>
+          <span class="history-count">Stored on the server</span>
+        </div>
+        <ul id="recent-jobs" class="job-list">
+          {% for job in jobs %}
+          <li class="job-card" data-job-id="{{ job.id }}">
+            <div class="job-main">
+              <h3>{{ job.title or job.url }}</h3>
+              <p class="job-note">{{ job.error or job.status }}</p>
+            </div>
+            <div class="job-side">
+              <span class="status-pill status-{{ job.status }}">{{ job.status }}</span>
+              <a href="{{ job.status_url }}">Status details <span aria-hidden="true">↗</span></a>
+            </div>
+          </li>
+          {% else %}
+          <li class="empty-history">No articles sent yet.</li>
+          {% endfor %}
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>“Sent” means your email provider accepted the EPUB. Kindle delivery can take a little while.</p>
+    </footer>
+  </body>
+</html>

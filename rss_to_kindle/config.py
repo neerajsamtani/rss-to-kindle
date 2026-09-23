@@ -9,8 +9,12 @@ ENV_PATH = Path(".env")
 ENV_EXAMPLE_PATH = Path(".env.example")
 
 
-def load_config() -> dict:
-    """Load configuration from .env file and environment variables."""
+def load_config(require_feeds: bool = True) -> dict:
+    """Load configuration from .env and validate delivery settings.
+
+    FEEDS remains required for the scheduled RSS workflow. One-off article actions
+    pass ``require_feeds=False`` because they do not depend on a configured feed.
+    """
     load_dotenv()
 
     session_cookie, session_expires = _parse_session_cookie()
@@ -30,8 +34,13 @@ def load_config() -> dict:
         "poll_interval_minutes": int(os.getenv("POLL_INTERVAL_MINUTES", "30")),
     }
 
-    _validate(config)
+    _validate(config, require_feeds=require_feeds)
     return config
+
+
+def load_delivery_config() -> dict:
+    """Load validated Kindle delivery settings without requiring FEEDS."""
+    return load_config(require_feeds=False)
 
 
 def _parse_feeds(raw: str) -> list[str]:
@@ -91,14 +100,15 @@ def load_substack_cookies() -> tuple[str, dict[str, str]]:
     return session_cookie, connect_cookies
 
 
-def _validate(config: dict) -> None:
-    """Validate that all required config fields are present."""
+def _validate(config: dict, require_feeds: bool = True) -> None:
+    """Validate required fields, optionally allowing a one-off URL with no FEEDS."""
     required = [
-        ("feeds", "FEEDS"),
         ("kindle_email", "KINDLE_EMAIL"),
         ("sender_email", "SENDER_EMAIL"),
         ("sender_password", "SENDER_PASSWORD"),
     ]
+    if require_feeds:
+        required.insert(0, ("feeds", "FEEDS"))
     missing = [env_name for key, env_name in required if not config.get(key)]
     if missing:
         raise ValueError(f"Missing required environment variables: {', '.join(missing)}")

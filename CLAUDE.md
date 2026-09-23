@@ -81,6 +81,23 @@ uv run pre-commit autoupdate
 - **Lint** (`.github/workflows/lint.yml`): Runs `ruff check` and `ruff format --check` on PRs and pushes to main.
 - **Fetch** (`.github/workflows/fetch.yml`): Scheduled every 6 hours (+ manual dispatch) to run `fetch` and send new articles. Uses `actions/cache` to persist `~/.rss-to-kindle/sent.json` between runs. All config is via repository secrets.
 
+## Raspberry Pi deployment
+
+See [deploy/pi/README.md](deploy/pi/README.md) for Pi installation, Dagu deployment, host
+integration, health checks, backups, and recovery. Deployment uses the tracked public Git clone
+and builds an ARM64 image on the Pi; `.env.runtime` and the ext4-backed `data/` directory are
+untracked. Do not rsync tracked application code or run `git clean` on the Pi. The stable poller
+is installed outside the checkout so a failed candidate can restore the prior image and Compose
+file before boot reconciliation starts the stack.
+
+The Pi packaging and controller checks run with the regular suite:
+
+```bash
+uv run python -m unittest discover -s tests -v
+uv run ruff check .
+for file in scripts/*.sh; do bash -n "$file"; done
+```
+
 ## Architecture
 
 The pipeline flows linearly: **feed.py → fetcher.py → extractor.py → kindle.py**, orchestrated by **cli.py**.

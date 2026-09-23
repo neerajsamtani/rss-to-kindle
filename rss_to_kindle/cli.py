@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import click
-import lxml.html
 from dotenv import load_dotenv
 
 from .config import (
@@ -229,7 +228,11 @@ def _echo_cookie_secrets() -> None:
                 click.echo(line.split("=", 1)[1])
 
 
-def _import_substack_cookie(browser: str, print_secrets: bool = False) -> None:
+def _import_substack_cookie(
+    browser: str,
+    print_secrets: bool = False,
+    target_url: str | None = None,
+) -> None:
     """Import Substack session cookies from the given browser and save them to .env.
 
     Substack uses two session cookies: substack.sid on .substack.com and connect.sid
@@ -247,6 +250,16 @@ def _import_substack_cookie(browser: str, print_secrets: bool = False) -> None:
         host = urlparse(feed_url).hostname
         if host:
             feed_domains.add(host)
+    if target_url:
+        parsed_url = urlparse(target_url)
+        if (
+            parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.hostname
+            or parsed_url.username
+            or parsed_url.password
+        ):
+            raise click.ClickException("--url must be a valid HTTP or HTTPS URL.")
+        feed_domains.add(parsed_url.hostname)
 
     # Single loader call to avoid repeated keychain/password prompts on macOS
     try:
@@ -302,15 +315,6 @@ def _import_substack_cookie(browser: str, print_secrets: bool = False) -> None:
         _echo_cookie_secrets()
 
 
-def _detect_substack(raw_html: str) -> bool:
-    """Detect whether HTML was served by Substack (works for custom domains too)."""
-    doc = lxml.html.fromstring(raw_html)
-    gen = doc.find('.//meta[@name="generator"]')
-    if gen is not None and gen.get("content", "").lower() == "substack":
-        return True
-    return "substackcdn.com" in raw_html
-
-
 def _check_substack_paywall(raw_html: str, has_cookie: bool) -> None:
     """Warn the user if a Substack paywall is detected."""
     if 'class="paywall"' not in raw_html:
@@ -342,9 +346,14 @@ def _check_substack_paywall(raw_html: str, has_cookie: bool) -> None:
     is_flag=True,
     help="Also print the cookie values for pasting into GitHub Actions secrets.",
 )
-def substack_login(from_browser, print_secrets):
+@click.option(
+    "--url",
+    "target_url",
+    help="Import the connect.sid cookie for this custom-domain URL, even without a feed.",
+)
+def substack_login(from_browser, print_secrets, target_url):
     """Import your Substack session cookie from a browser."""
-    _import_substack_cookie(from_browser, print_secrets)
+    _import_substack_cookie(from_browser, print_secrets, target_url)
 
 
 @main.command()
@@ -530,28 +539,31 @@ def preview(url, output):
     session_cookie, connect_cookies = load_substack_cookies()
 
     click.echo(f"Fetching: {url}")
-    # Fetch without cookies first to avoid sending auth to non-Substack sites
-    raw_html = fetch_article_html(url)
-    is_substack = _detect_substack(raw_html)
+    from .extractor import EmptyArticleError, LoginRequiredError, SubscriptionRequiredError
+    from .fetcher import HTTPStatusError, PublicFetchError, UnsafeURL
+    from .pipeline import PipelineError, extract_url_article
 
-    if is_substack:
-        has_cookie = bool(session_cookie or connect_cookies)
-        # Re-fetch with cookies to unlock paywalled content
-        if has_cookie:
-            raw_html = fetch_article_html(
-                url, session_cookie, is_substack=True, connect_cookies=connect_cookies
-            )
-        _check_substack_paywall(raw_html, has_cookie)
-
-    article = extract_article(
-        raw_html,
-        author="Unknown",
-        published="",
-        session_cookie=session_cookie,
-        is_substack=is_substack,
-        url=url,
-        connect_cookies=connect_cookies,
-    )
+    try:
+        article = extract_url_article(
+            url,
+            {
+                "substack_session_cookie": session_cookie,
+                "substack_connect_cookies": connect_cookies,
+            },
+        )
+    except PipelineError as e:
+        raise click.ClickException(e.user_message) from e
+    except (
+        EmptyArticleError,
+        HTTPStatusError,
+        LoginRequiredError,
+        PublicFetchError,
+        SubscriptionRequiredError,
+        UnsafeURL,
+    ) as e:
+        raise click.ClickException(str(e)) from e
+    except Exception as e:
+        raise click.ClickException("The page could not be prepared as a readable article.") from e
 
     epub_data = build_epub(article)
 
