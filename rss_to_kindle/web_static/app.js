@@ -173,6 +173,7 @@ async function postJob(url, key, retryButton = null) {
       throw error;
     }
     showJob(body);
+    if (urlInput.value.trim() === url) urlInput.value = "";
     if (retryButton) retryButton.remove();
   } catch (error) {
     const message = document.createElement("span");
