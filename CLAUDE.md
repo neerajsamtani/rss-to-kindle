@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python CLI tool that monitors RSS feeds, fetches full article content, and emails them to a Kindle device as EPUB attachments with embedded images and generated covers. Supports any RSS feed; Substack-specific features (session cookies for paywalled content, HTML workarounds) activate automatically when the feed's generator is Substack.
+Python CLI tool that monitors RSS feeds, fetches full article content, and emails them to a Kindle device as EPUB attachments with embedded images and generated covers. It also has a private web form for sending a single URL. Supports any RSS feed; Substack-specific features (session cookies for paywalled content, HTML workarounds) activate automatically when the feed's generator is Substack.
 
 ## Commands
 
@@ -26,6 +26,10 @@ uv run rss-to-kindle remove <url>       # Remove a feed URL from .env
 uv run rss-to-kindle history            # Show recently sent articles (--limit N)
 uv run rss-to-kindle preview <url>      # Generate EPUB locally without sending (-o path)
 ```
+
+For a local web-service command and authenticated health/API probes, see the **One-off web
+service** section in [README.md](README.md). Keep local Gunicorn bound to loopback; the UI trusts
+`Tailscale-User-Login` only when a trusted proxy supplies it.
 
 ### Testing
 
@@ -110,6 +114,27 @@ The pipeline flows linearly: **feed.py → fetcher.py → extractor.py → kindl
 - `state.py` tracks sent article URLs in `~/.rss-to-kindle/sent.json` to prevent duplicates
 - `cli.py` wires everything together with click; `_process_feeds()` is the main loop body
 
+### One-off web service
+
+The web form uses the same fetch, extraction, and delivery code as `preview` and the RSS path.
+Change these modules for the corresponding behavior:
+
+- `fetcher.py`: safe public HTTP requests, redirects, and scoped Substack cookies.
+- `extractor.py`: article selection, cleanup, and embedded images.
+- `pipeline.py`: one-URL orchestration, progress stages, and safe delivery errors.
+- `kindle.py`: EPUB generation and SMTP delivery.
+- `job_queue.py`: persistent SQLite history, one serial worker, and shutdown draining.
+- `web.py`: Flask routes, owner allowlist, same-origin POST checks, and status API.
+- `web_templates/`, `web_static/app.js`, and `web_static/style.css`: rendered pages and browser UI.
+- `config.py`: shared delivery and cookie settings; one-off web actions do not require `FEEDS`.
+
+The owner allowlist is `WEB_OWNER_LOGIN` and must match the trusted `Tailscale-User-Login`
+header. The app must stay behind a private proxy; do not trust that header from a public client.
+`GET /api/health` returns generic database and worker health without secrets or article data.
+`GET /api/jobs` lists recent requests,
+`GET /api/jobs/<id>` returns one status record, and `GET /jobs/<id>` renders its detail page.
+Keep one Gunicorn worker because the SQLite queue has one in-process worker thread.
+
 ### Image processing pipeline (extractor.py)
 
 Substack wraps images in deeply nested markup (`div.captioned-image-container > figure > a > div > picture > img`) that readability-lxml strips during content extraction. To work around this:
@@ -121,6 +146,11 @@ Substack wraps images in deeply nested markup (`div.captioned-image-container > 
 ## Configuration
 
 All config is via environment variables (`.env` file). See `.env.example` for the template. `FEEDS` is comma-separated for multiple feeds. `SUBSTACK_SESSION_COOKIE` and `SUBSTACK_CONNECT_COOKIES` are only needed for paid Substack content — Substack uses `substack.sid` on `.substack.com` and per-domain `connect.sid` cookies on custom newsletter domains. Both cookie env vars store JSON with `value` and `expires` fields (e.g. `SUBSTACK_SESSION_COOKIE={"value": "s%3A...", "expires": 1234567890}`, `SUBSTACK_CONNECT_COOKIES={"newsletter.example.com": {"value": "s%3A...", "expires": 1234567890}}`). The CLI warns when cookies are within 14 days of expiring, and emails the sender address (at most once per 24h) when they are expiring or expired.
+
+Refresh cookies from a logged-in browser, including the per-domain cookie for a custom publication,
+with `uv run rss-to-kindle substack-login --from-browser chrome --url '<article-url>'`. Use
+`uv run rss-to-kindle preview '<article-url>'` to inspect extraction and build an EPUB without
+sending it. Treat imported cookie values as secrets; do not print them into logs or chat.
 
 ## Code Style Guidelines
 

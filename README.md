@@ -75,6 +75,33 @@ uv run rss-to-kindle --help
 
 Already-sent articles are tracked in `~/.rss-to-kindle/sent.json` to avoid duplicates.
 
+## One-off web service
+
+The private web form queues a single URL and keeps its status in SQLite. It needs
+`KINDLE_EMAIL`, `SENDER_EMAIL`, and `SENDER_PASSWORD` in `.env`, but does not require `FEEDS`.
+For local API debugging, set the owner login and use one Gunicorn worker:
+
+```sh
+WEB_OWNER_LOGIN=you@example.com WEB_BASE_PATH="" \
+  WEB_DB_PATH=/tmp/rss-to-kindle-jobs.sqlite3 \
+  uv run gunicorn --workers 1 --bind 127.0.0.1:8000 'rss_to_kindle.web:create_app()'
+
+# Health is internal and does not include credentials or article data
+curl -fsS http://127.0.0.1:8000/api/health
+
+# Owner-protected API requests need the trusted identity header
+curl -fsS -H 'Tailscale-User-Login: you@example.com' \
+  http://127.0.0.1:8000/api/jobs
+```
+
+The browser UI requires a trusted proxy to set `Tailscale-User-Login`; deployment uses
+Tailscale Serve. Keep Gunicorn bound to loopback and do not expose a client-controlled identity
+header. See [the Pi guide](deploy/pi/README.md) for deployment and recovery.
+
+To inspect extraction without sending email, run `uv run rss-to-kindle preview <url>`. Refresh
+Substack cookies from a logged-in browser with
+`uv run rss-to-kindle substack-login --from-browser chrome --url '<article-url>'`.
+
 ## Automated fetching with GitHub Actions
 
 The included workflow (`.github/workflows/fetch.yml`) runs `fetch` every 6 hours and caches `sent.json` between runs so articles are never sent twice. To enable it:
