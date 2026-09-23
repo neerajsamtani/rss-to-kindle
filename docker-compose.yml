@@ -13,7 +13,7 @@ services:
     environment:
       HOME: /data
       WEB_BASE_PATH: /rss-to-kindle
-      WEB_OWNER_LOGIN: neerajsamtani@gmail.com
+      WEB_OWNER_LOGIN: neerajjsamtani@gmail.com
       WEB_DB_PATH: /data/jobs.sqlite3
       WEB_DRAIN_TIMEOUT_SECONDS: "180"
     user: "1000:1000"
