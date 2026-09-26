@@ -2,7 +2,7 @@ name: rss-to-kindle
 
 services:
   web:
-    image: rss-to-kindle:${IMAGE_TAG:?Set IMAGE_TAG in the Pi checkout .env file}
+    image: rss-to-kindle:${IMAGE_TAG:-local}
     build:
       context: .
       args:
@@ -12,8 +12,6 @@ services:
         format: raw
     environment:
       HOME: /data
-      WEB_BASE_PATH: /rss-to-kindle
-      WEB_OWNER_LOGIN: neerajjsamtani@gmail.com
       WEB_DB_PATH: /data/jobs.sqlite3
       WEB_DRAIN_TIMEOUT_SECONDS: "180"
     user: "1000:1000"

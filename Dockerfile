@@ -12,7 +12,6 @@ RUN groupadd --gid 1000 app \
 
 COPY pyproject.toml README.md ./
 COPY rss_to_kindle ./rss_to_kindle
-COPY scripts ./scripts
 COPY tests ./tests
 
 RUN python -m pip install --no-cache-dir .
@@ -20,11 +19,7 @@ RUN cd / && python -c "from importlib.resources import files; package = files('r
 
 ARG RUN_TESTS=0
 RUN if [ "$RUN_TESTS" = "1" ]; then \
-      apt-get update \
-      && apt-get install --no-install-recommends -y git \
-      && python -m unittest discover -s tests -v \
-      && apt-get purge --auto-remove -y git \
-      && rm -rf /var/lib/apt/lists/*; \
+      python -m unittest discover -s tests -v; \
     fi
 RUN rm -rf /build
 

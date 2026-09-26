@@ -82,10 +82,8 @@ def _process_feeds(config: dict, latest_only: bool = False, days: int = 3) -> in
                 raw_html,
                 author=feed_article.author,
                 published=feed_article.published,
-                session_cookie=config["substack_session_cookie"],
                 is_substack=feed_article.is_substack,
                 url=feed_article.url,
-                connect_cookies=config["substack_connect_cookies"],
             )
 
             click.echo("    Sending to Kindle...")

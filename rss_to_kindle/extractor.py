@@ -292,15 +292,10 @@ def extract_article(
     raw_html: str,
     author: str = "Unknown",
     published: str = "",
-    session_cookie: str = "",
     is_substack: bool = False,
     url: str = "",
-    connect_cookies: dict[str, str] | None = None,
 ) -> Article:
-    """Extract clean article content; cookie parameters remain for API compatibility.
-
-    This function never uses them. Image assets are fetched as public requests without cookies.
-    """
+    """Extract clean article content and fetch image assets as public requests."""
     meta = _extract_meta(raw_html)
     raw_html = _simplify_headers(raw_html)
     if is_substack:

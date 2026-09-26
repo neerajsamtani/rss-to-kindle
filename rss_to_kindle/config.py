@@ -140,27 +140,34 @@ def add_feed_to_env(feed_url: str) -> None:
         ENV_PATH.write_text(f"{key}={feed_url}\n")
 
 
+def _update_existing_env_key(key: str, new_line: str) -> bool:
+    """Update a key in an existing .env and report whether the file existed."""
+    if not ENV_PATH.exists():
+        return False
+    lines = ENV_PATH.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = new_line
+            break
+    else:
+        lines.append(new_line)
+    ENV_PATH.write_text("\n".join(lines) + "\n")
+    return True
+
+
 def save_kindle_email_to_env(email: str) -> None:
     """Write or update KINDLE_EMAIL in the .env file."""
     key = "KINDLE_EMAIL"
     new_line = f"{key}={email}"
 
-    if ENV_PATH.exists():
-        lines = ENV_PATH.read_text().splitlines()
-        for i, line in enumerate(lines):
-            if line.startswith(f"{key}="):
-                lines[i] = new_line
-                break
-        else:
-            lines.append(new_line)
-        ENV_PATH.write_text("\n".join(lines) + "\n")
+    if _update_existing_env_key(key, new_line):
+        return
+    if ENV_EXAMPLE_PATH.exists():
+        text = ENV_EXAMPLE_PATH.read_text()
+        text = text.replace(f"{key}=name@kindle.com", new_line)
+        ENV_PATH.write_text(text)
     else:
-        if ENV_EXAMPLE_PATH.exists():
-            text = ENV_EXAMPLE_PATH.read_text()
-            text = text.replace(f"{key}=name@kindle.com", new_line)
-            ENV_PATH.write_text(text)
-        else:
-            ENV_PATH.write_text(new_line + "\n")
+        ENV_PATH.write_text(new_line + "\n")
 
 
 def remove_feed_from_env(feed_url: str) -> None:
@@ -194,25 +201,17 @@ def save_cookie_to_env(cookie_value: str, expires: int | None = None) -> None:
         data["expires"] = expires
     new_line = f"{key}={json.dumps(data)}"
 
-    if ENV_PATH.exists():
-        lines = ENV_PATH.read_text().splitlines()
+    if _update_existing_env_key(key, new_line):
+        return
+    if ENV_EXAMPLE_PATH.exists():
+        lines = ENV_EXAMPLE_PATH.read_text().splitlines()
         for i, line in enumerate(lines):
             if line.startswith(f"{key}="):
                 lines[i] = new_line
                 break
-        else:
-            lines.append(new_line)
         ENV_PATH.write_text("\n".join(lines) + "\n")
     else:
-        if ENV_EXAMPLE_PATH.exists():
-            lines = ENV_EXAMPLE_PATH.read_text().splitlines()
-            for i, line in enumerate(lines):
-                if line.startswith(f"{key}="):
-                    lines[i] = new_line
-                    break
-            ENV_PATH.write_text("\n".join(lines) + "\n")
-        else:
-            ENV_PATH.write_text(new_line + "\n")
+        ENV_PATH.write_text(new_line + "\n")
 
 
 def save_connect_cookies_to_env(cookies: dict[str, dict]) -> None:
@@ -223,14 +222,5 @@ def save_connect_cookies_to_env(cookies: dict[str, dict]) -> None:
     key = "SUBSTACK_CONNECT_COOKIES"
     new_line = f"{key}={json.dumps(cookies)}"
 
-    if ENV_PATH.exists():
-        lines = ENV_PATH.read_text().splitlines()
-        for i, line in enumerate(lines):
-            if line.startswith(f"{key}="):
-                lines[i] = new_line
-                break
-        else:
-            lines.append(new_line)
-        ENV_PATH.write_text("\n".join(lines) + "\n")
-    else:
+    if not _update_existing_env_key(key, new_line):
         ENV_PATH.write_text(new_line + "\n")

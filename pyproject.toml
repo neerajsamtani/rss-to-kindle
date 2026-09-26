@@ -1,7 +1,7 @@
 [project]
 name = "rss-to-kindle"
 version = "0.1.0"
-description = "Monitor Substack RSS feeds, fetch full paywalled content, and email to Kindle"
+description = "Monitor RSS feeds and email full articles to Kindle, with optional Substack support"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.3.1",
@@ -37,6 +37,7 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+extend-exclude = [".local-infra"]
 
 [tool.ruff.lint]
 select = [
